@@ -1,0 +1,10 @@
+node_modules/
+
+# SQLite database and WAL sidecar files. The db/ folder itself is kept
+# (see db/.gitkeep) so it can be mounted as a volume.
+db/*.sqlite
+db/*.sqlite-shm
+db/*.sqlite-wal
+
+npm-debug.log*
+.DS_Store

@@ -1,0 +1,442 @@
+/* ---------------------------------------------------------------
+   CS++ Flappy — layout & overlay styling
+   The canvas does all the game rendering; CSS only handles page
+   framing, the registration modal and the game-over panel.
+   --------------------------------------------------------------- */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Design tokens.
+
+   The palette is taken from the CS++ mascot itself — sampled straight out
+   of mascot.png, where the jumper is #05009d and the character is #ffc901.
+   Everything else is a tint or shade of those two, so the UI, the game and
+   the mascot all read as one brand. */
+:root {
+  /* --- CS++ brand --- */
+  --cs-blue: #05009d;        /* the jumper */
+  --cs-blue-light: #2a24c4;  /* lifted, for hovers and accents */
+  --cs-blue-deep: #03006b;   /* button shadow / pressed state */
+  --cs-gold: #ffc901;        /* the mascot's own gold */
+  --cs-gold-deep: #c99d00;   /* gold button shadow */
+
+  /* --- Surfaces --- */
+  --ink: #06003d;            /* page behind the playfield */
+  --panel: rgba(8, 4, 64, .94);
+  --panel-edge: rgba(255, 201, 1, .38);
+
+  /* --- Text --- */
+  --text: #eef0ff;
+  --text-dim: rgba(238, 240, 255, .62);
+  --red: #ff7a8a;
+
+  /* One monospace stack used throughout — the main "computer" cue */
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono",
+          Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  font-family: var(--mono);
+  /* Stop iOS double-tap-zoom / pull-to-refresh from fighting the controls */
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile-first: fill the viewport. On wide screens we cap the width so the
+   game reads as a portrait phone-shaped playfield instead of stretching. */
+#game-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 480px;
+  max-height: 100vh;
+  /* Respect notches on iPhones when run full-screen from a QR-code link */
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(0, 0, 0, .5);
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--cs-blue);
+}
+
+/* --- Overlays ------------------------------------------------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  color: #fff;
+  background: rgba(3, 0, 58, .72);
+  padding: 20px;
+  /* Long leaderboards on short phones need to scroll rather than clip */
+  overflow-y: auto;
+  transition: opacity .18s ease;
+}
+
+.overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.overlay h1 {
+  font-size: clamp(24px, 7.5vw, 38px);
+  letter-spacing: -1px;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+}
+
+.overlay h2 {
+  font-size: clamp(17px, 5vw, 24px);
+  letter-spacing: -.5px;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+}
+
+/* --- Terminal-style title -------------------------------------- */
+
+.title-prompt {
+  color: var(--cs-gold);
+  opacity: .9;
+}
+
+/* Blinking block cursor after the title, like a waiting shell prompt */
+.caret {
+  display: inline-block;
+  width: .55em;
+  height: 1em;
+  margin-left: .12em;
+  vertical-align: text-bottom;
+  background: var(--cs-gold);
+  animation: blink 1.1s steps(1) infinite;
+}
+
+@keyframes blink {
+  0%, 50%   { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* Respect a reduced-motion preference — a blinking cursor is exactly the
+   kind of thing that setting exists for. */
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; }
+}
+
+/* Exit code after "process exited", styled like terminal output */
+.exit-code {
+  color: var(--red);
+  font-size: .8em;
+}
+
+/* Dim brackets in "top_10[]" so the identifier reads first */
+.bracket { opacity: .45; }
+
+/* --- Society sign-up (primary action on the start screen) ------ */
+
+.join-panel {
+  gap: 8px;
+  /* Yellow hairline lifts this above the form below without a loud fill.
+     The opaque background matters as much as the border: the bird rests
+     behind this panel, and semi-transparent panels let the sprite show
+     through and make the small print unreadable. */
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--panel-edge);
+}
+
+.join-pitch {
+  font-size: 13px;
+  opacity: .8;
+}
+
+.join-note {
+  font-size: 11px;
+  opacity: .55;
+  line-height: 1.4;
+}
+
+/* The one button that should catch the eye first */
+.btn-join {
+  font-size: clamp(15px, 4.6vw, 18px);
+  padding: 15px 24px;
+}
+
+/* The start-screen Run button is blue so the gold Join button above it stays
+   the obvious primary action. Gold is reserved for the society ask. */
+#register-form .btn {
+  color: #fff;
+  background: var(--cs-blue-light);
+  box-shadow: 0 4px 0 var(--cs-blue-deep);
+}
+
+#register-form .btn:active {
+  box-shadow: 0 1px 0 var(--cs-blue-deep);
+}
+
+/* "then play" rule between the sign-up ask and the form */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: lowercase;
+  opacity: .45;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: currentColor;
+}
+
+/* Shared card used by both the form and the game-over content */
+.panel {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Near-opaque: panels sit over the live game (bird, pipes, ground), and
+     a translucent fill leaves text fighting the artwork behind it. */
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+/* --- Registration form ---------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+/* Rendered as "> name" / "> student_id", like a shell prompt */
+.field-label {
+  font-size: 12px;
+  letter-spacing: .5px;
+  opacity: .8;
+}
+
+.field-label::before {
+  content: "> ";
+  color: var(--cs-gold);
+  opacity: .85;
+}
+
+.field input {
+  /* 16px minimum stops iOS Safari zooming in when the field is focused */
+  font-size: 16px;
+  font-family: var(--mono);
+  padding: 12px 14px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: #fff;
+  color: #10123a;
+  width: 100%;
+  /* Text fields need selection re-enabled (body disables it globally) */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--cs-gold);
+}
+
+.field input.invalid {
+  border-color: #ff6b6b;
+}
+
+/* Compiler-style error line: "!! <message>" */
+.form-error {
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--red);
+  text-align: left;
+}
+
+.form-error:not(:empty)::before {
+  content: "!! ";
+  opacity: .8;
+}
+
+.form-error:empty {
+  min-height: 0;
+}
+
+/* --- Score readout -------------------------------------------- */
+
+.score-label {
+  font-size: 12px;
+  letter-spacing: 1px;
+  opacity: .6;
+}
+
+.final-score {
+  font-size: clamp(40px, 13vw, 60px);
+  font-weight: bold;
+  line-height: 1;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, .35);
+}
+
+.best-line {
+  font-size: 14px;
+  opacity: .9;
+  min-height: 18px;
+}
+
+/* Highlight a new personal record */
+.best-line.is-new-best {
+  color: var(--cs-gold);
+  font-weight: bold;
+  opacity: 1;
+}
+
+/* --- Leaderboard ---------------------------------------------- */
+
+.leaderboard {
+  text-align: left;
+}
+
+.leaderboard h3 {
+  font-size: 12px;
+  letter-spacing: .5px;
+  opacity: .65;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.leaderboard-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Cap the height so the buttons below stay reachable on small screens */
+  max-height: 33vh;
+  overflow-y: auto;
+}
+
+.leaderboard-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .07);
+}
+
+/* Rank shown as a zero-based array index, e.g. [0] — the rank text itself
+   is set in game.js so the markup and the styling agree. */
+.leaderboard-rank {
+  flex: 0 0 30px;
+  opacity: .55;
+  font-size: 12px;
+  color: var(--cs-gold);
+}
+
+.leaderboard-name {
+  flex: 1 1 auto;
+  /* Long names truncate rather than wrapping and breaking the row */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-score {
+  flex: 0 0 auto;
+  font-weight: bold;
+}
+
+/* The row belonging to the player who just finished */
+.leaderboard-list li.is-you {
+  background: rgba(255, 201, 1, .20);
+  box-shadow: inset 0 0 0 1px rgba(255, 201, 1, .55);
+}
+
+.leaderboard-status {
+  justify-content: center;
+  opacity: .7;
+  font-size: 13px;
+  background: none !important;
+}
+
+/* --- Buttons -------------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn {
+  padding: 14px 28px;
+  font-size: clamp(15px, 4.5vw, 18px);
+  font-family: var(--mono);
+  font-weight: bold;
+  color: #1a1400;
+  background: var(--cs-gold);
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 4px 0 var(--cs-gold-deep);
+  cursor: pointer;
+  /* Big enough to hit comfortably with a thumb */
+  min-height: 48px;
+  /* Anchors styled as buttons need these to match <button> */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--cs-gold-deep);
+}
+
+.btn-secondary {
+  color: #fff;
+  background: var(--cs-blue-light);
+  box-shadow: 0 4px 0 var(--cs-blue-deep);
+}
+
+.btn-secondary:active {
+  box-shadow: 0 1px 0 var(--cs-blue-deep);
+}
+
+.btn[disabled] {
+  opacity: .6;
+  cursor: default;
+}
+
+/* Short screens: tighten spacing so everything fits without scrolling */
+@media (max-height: 640px) {
+  .overlay { gap: 8px; padding: 14px; }
+  .panel { padding: 14px; gap: 10px; }
+  .final-score { font-size: 36px; }
+  .leaderboard-list { max-height: 26vh; }
+}

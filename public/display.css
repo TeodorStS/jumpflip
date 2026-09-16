@@ -1,0 +1,322 @@
+/* ---------------------------------------------------------------
+   CS++ Flappy — stand display screen
+
+   Designed for a laptop or TV a few metres from the viewer, so type is
+   large and contrast is high. Same brand tokens as the game.
+   --------------------------------------------------------------- */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Brand, sampled from the mascot — matches the game exactly */
+  --cs-blue: #05009d;
+  --cs-blue-light: #2a24c4;
+  --cs-blue-deep: #03006b;
+  --cs-gold: #ffc901;
+  --cs-gold-deep: #c99d00;
+
+  --ink: #06003d;
+  --panel: rgba(8, 4, 64, .92);
+  --panel-edge: rgba(255, 201, 1, .34);
+
+  --text: #eef0ff;
+  --text-dim: rgba(238, 240, 255, .6);
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono",
+          Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html, body {
+  height: 100%;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--mono);
+  overflow: hidden;
+}
+
+/* Subtle circuit-ish backdrop, echoing the game without competing with it */
+body {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+#board {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(16px, 2.5vh, 32px) clamp(16px, 2.5vw, 40px);
+  gap: clamp(12px, 2vh, 24px);
+}
+
+/* --- Header ---------------------------------------------------- */
+
+.head {
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.head h1 {
+  font-size: clamp(28px, 5vw, 60px);
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+
+.prompt { color: var(--cs-gold); }
+
+.tagline {
+  margin-top: 4px;
+  font-size: clamp(12px, 1.4vw, 18px);
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* --- Layout ---------------------------------------------------- */
+
+.panels {
+  flex: 1 1 auto;
+  display: grid;
+  /* Actions on the left, leaderboard taking the larger share on the right */
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr);
+  gap: clamp(12px, 2vw, 28px);
+  min-height: 0;   /* lets the leaderboard scroll instead of overflowing */
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2vh, 24px);
+  min-height: 0;
+}
+
+.card {
+  background: var(--panel);
+  border-radius: 18px;
+  padding: clamp(14px, 2vh, 26px);
+  box-shadow: inset 0 0 0 1px var(--panel-edge);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-height: 0;
+}
+
+.card h2 {
+  font-size: clamp(13px, 1.5vw, 20px);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: normal;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The play card is the primary action, so it gets the gold edge */
+.card-play {
+  box-shadow: inset 0 0 0 2px var(--cs-gold);
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.card-join { flex: 0 0 auto; }
+
+/* --- QR codes -------------------------------------------------- */
+
+.qr-slot {
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px;
+  line-height: 0;
+}
+
+.qr {
+  display: block;
+  width: clamp(140px, 16vw, 300px);
+  height: auto;
+  /* Never smooth a QR code: blurred module edges make scanners work
+     harder, which matters under bad lighting at a stand. */
+  image-rendering: pixelated;
+}
+
+.card-join .qr { width: clamp(110px, 11vw, 200px); }
+
+.url {
+  font-size: clamp(11px, 1.1vw, 15px);
+  color: var(--cs-gold);
+  word-break: break-all;
+  text-align: center;
+}
+
+/* --- Leaderboard ----------------------------------------------- */
+
+.card-leaderboard {
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
+/* Pulsing dot: shows at a glance that the board is still updating */
+.live {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #3ddc84;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.live.stale { background: #ff7a8a; animation: none; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live { animation: none; }
+}
+
+/* Rows share the available height evenly rather than scrolling, so a row
+   is never cut in half at the bottom edge — a clipped name reads as a bug
+   on a screen nobody is going to scroll. */
+.leaderboard {
+  list-style: none;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3px, .6vh, 8px);
+  margin-top: 4px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.leaderboard li {
+  /* Each row takes an equal share of the list height and shrinks to fit,
+     so ten rows always fit whatever the screen size. */
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 1.2vw, 18px);
+  padding: 0 clamp(10px, 1.2vw, 18px);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .06);
+  font-size: clamp(14px, 1.7vw, 28px);
+  overflow: hidden;
+}
+
+.rank {
+  flex: 0 0 auto;
+  min-width: 2.4em;
+  color: var(--cs-gold);
+  opacity: .7;
+  font-size: .8em;
+}
+
+.pname {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pscore {
+  flex: 0 0 auto;
+  font-weight: bold;
+}
+
+/* Top three get progressively more emphasis */
+.leaderboard li.top1 {
+  background: rgba(255, 201, 1, .2);
+  box-shadow: inset 0 0 0 1px rgba(255, 201, 1, .55);
+}
+.leaderboard li.top2 { background: rgba(255, 255, 255, .13); }
+.leaderboard li.top3 { background: rgba(255, 255, 255, .1); }
+
+/* A row that just changed, so viewers notice new entries */
+.leaderboard li.changed {
+  animation: flash 1.2s ease-out;
+}
+
+@keyframes flash {
+  0%   { background: rgba(255, 201, 1, .5); }
+  100% { background: rgba(255, 255, 255, .06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard li.changed { animation: none; }
+}
+
+.status {
+  justify-content: center;
+  text-align: center;
+  color: var(--text-dim);
+  background: none !important;
+}
+
+/* --- Stats ----------------------------------------------------- */
+
+.stats {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, .12);
+  text-align: center;
+}
+
+.stats dt {
+  font-size: clamp(9px, .9vw, 12px);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.stats dd {
+  font-size: clamp(18px, 2.4vw, 36px);
+  font-weight: bold;
+  line-height: 1.1;
+}
+
+/* --- Warning --------------------------------------------------- */
+
+.warning {
+  flex: 0 0 auto;
+  background: rgba(255, 122, 138, .15);
+  box-shadow: inset 0 0 0 1px rgba(255, 122, 138, .5);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: clamp(11px, 1.1vw, 15px);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.warning code {
+  background: rgba(0, 0, 0, .35);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.hidden { display: none; }
+
+/* --- Portrait / narrow screens --------------------------------- */
+
+@media (max-aspect-ratio: 1/1), (max-width: 760px) {
+  .panels {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    overflow-y: auto;
+  }
+
+  .col-actions {
+    flex-direction: row;
+    /* Keep both QR codes side by side rather than stacked, so they stay
+       large enough to scan on a narrow screen. */
+  }
+
+  .card-play, .card-join { flex: 1 1 0; }
+  .card-join .qr { width: clamp(100px, 22vw, 160px); }
+}

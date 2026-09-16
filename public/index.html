@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#05009d">
+  <title>CS++ Flappy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Wrapper keeps the canvas centred and bounded on desktop, full-bleed on phones -->
+  <div id="game-wrap">
+    <canvas id="game"></canvas>
+
+    <!-- ---------------------------------------------------------
+         Start screen — shown once per session before play.
+
+         Society sign-up is deliberately the FIRST and most prominent
+         thing here: people are most likely to join in the moment
+         just before they play. It's a soft gate, so anyone can still
+         fill in the form below and play without joining.
+
+         Player details are held in memory so replays skip this screen.
+         --------------------------------------------------------- -->
+    <div id="register-screen" class="overlay">
+      <h1 class="title">
+        <span class="title-prompt">&gt;</span> CS++ Flappy<span class="caret"></span>
+      </h1>
+
+      <!-- Society call to action, above the fold -->
+      <div class="panel join-panel">
+        <p class="join-pitch">Not a member yet?</p>
+        <a id="join-btn" class="btn btn-join"
+           href="https://societies.tudublin.ie/societies/cscitycampus"
+           target="_blank" rel="noopener noreferrer">Join CS++ Society</a>
+        <p class="join-note">Opens in a new tab &mdash; the game waits here</p>
+      </div>
+
+      <p class="divider"><span>then play</span></p>
+
+      <form id="register-form" class="panel" novalidate>
+        <label class="field">
+          <span class="field-label">name</span>
+          <input id="input-name" name="name" type="text" autocomplete="name"
+                 maxlength="60" placeholder="Your name" required>
+        </label>
+
+        <label class="field">
+          <span class="field-label">student_id</span>
+          <!-- Full keyboard, not a numeric pad: the number starts with a
+               letter (e.g. C00035654). autocapitalize forces the prefix to
+               upper case on phones, matching how it is stored. -->
+          <input id="input-student" name="student_number" type="text"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false"
+                 maxlength="9" placeholder="C00035654" required>
+        </label>
+
+        <p id="register-error" class="form-error" role="alert" aria-live="polite"></p>
+
+        <button type="submit" class="btn">Run</button>
+      </form>
+    </div>
+
+    <!-- ---------------------------------------------------------
+         Game over — final score, personal best, leaderboard, CTAs
+         --------------------------------------------------------- -->
+    <div id="gameover-screen" class="overlay hidden">
+      <div class="panel gameover-panel">
+        <h2>process exited<span class="exit-code"> (1)</span></h2>
+
+        <p class="score-label">score</p>
+        <p id="final-score" class="final-score">0</p>
+
+        <!-- Personal best, filled from the POST /api/score response -->
+        <p id="best-line" class="best-line"></p>
+
+        <div class="leaderboard">
+          <h3>top_10<span class="bracket">[]</span></h3>
+          <ol id="leaderboard-list" class="leaderboard-list">
+            <li class="leaderboard-status">Loading…</li>
+          </ol>
+        </div>
+
+        <div class="actions">
+          <button id="replay-btn" class="btn">Run Again</button>
+          <!-- Still offered here for anyone who skipped it on the start
+               screen, but secondary: the primary ask happens up front. -->
+          <a class="btn btn-secondary"
+             href="https://societies.tudublin.ie/societies/cscitycampus"
+             target="_blank" rel="noopener noreferrer">Join CS++ Society</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

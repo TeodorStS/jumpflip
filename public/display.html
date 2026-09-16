@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#05009d">
+  <title>CS++ Flappy — Leaderboard</title>
+  <link rel="stylesheet" href="display.css">
+</head>
+<body>
+  <!-- Built for a laptop or TV at the stand: read-only, auto-refreshing,
+       legible from a few metres away. -->
+  <main id="board">
+
+    <header class="head">
+      <h1><span class="prompt">&gt;</span> CS++ Flappy</h1>
+      <p class="tagline">TU Dublin Computer Science Society</p>
+    </header>
+
+    <section class="panels">
+
+      <!-- Left: the two calls to action -->
+      <div class="col col-actions">
+
+        <div class="card card-play">
+          <h2>Scan to play</h2>
+          <div class="qr-slot">
+            <img id="qr-game" class="qr" alt="QR code linking to the game" width="300" height="300">
+          </div>
+          <p id="game-url" class="url">&nbsp;</p>
+        </div>
+
+        <div class="card card-join">
+          <h2>Join the society</h2>
+          <div class="qr-slot">
+            <img id="qr-join" class="qr" alt="QR code linking to CS++ Society sign-up" width="220" height="220">
+          </div>
+          <p class="url">societies.tudublin.ie</p>
+        </div>
+
+      </div>
+
+      <!-- Right: the live leaderboard -->
+      <div class="col col-board">
+        <div class="card card-leaderboard">
+          <h2>
+            Top players
+            <span id="live" class="live" title="Updating automatically"></span>
+          </h2>
+
+          <ol id="leaderboard" class="leaderboard">
+            <li class="status">Loading…</li>
+          </ol>
+
+          <dl id="stats" class="stats">
+            <div><dt>Players</dt><dd id="stat-players">–</dd></div>
+            <div><dt>Games</dt><dd id="stat-runs">–</dd></div>
+            <div><dt>Best</dt><dd id="stat-top">–</dd></div>
+          </dl>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Shown only when the page is opened at localhost, where the QR code
+         would be unreachable from anyone's phone. -->
+    <div id="warning" class="warning hidden">
+      <strong>This screen is on <code>localhost</code>.</strong>
+      Phones cannot reach that address. Reopen this page using the machine's
+      network IP (e.g. <code>http://192.168.1.42:3000/display.html</code>) so the
+      QR code points somewhere phones can actually load.
+    </div>
+
+  </main>
+
+  <script src="display.js"></script>
+</body>
+</html>

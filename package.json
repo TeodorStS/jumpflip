@@ -1,0 +1,17 @@
+{
+  "name": "cspp-flappy",
+  "version": "1.0.0",
+  "description": "Flappy Bird clone with leaderboard for CS++ Society, TU Dublin",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "express": "^5.2.1",
+    "qrcode": "^1.5.4"
+  },
+  "private": true
+}
