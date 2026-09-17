@@ -19,19 +19,48 @@ Set `PORT` to change the port, and `DB_DIR` to move the database:
 PORT=8080 DB_DIR=/data npm start
 ```
 
+## Running it with Docker
+
+```bash
+docker compose up -d --build
+```
+
+Then open <http://localhost:3000>. The scores live in a named Docker volume
+(`cspp-flappy-data`), so rebuilds and restarts never lose them — only
+`docker compose down -v` deletes the data.
+
+See **[DEPLOYING.md](DEPLOYING.md)** for the full step-by-step guide to
+hosting this on a server, including HTTPS, backups and troubleshooting.
+
 ## Running it at an event
 
-Players join over Wi-Fi by scanning a QR code, so the server needs to be
-reachable on the local network:
+**Host it on a server with a public IP.** See [deploy/README.md](deploy/README.md)
+for the full guide — there is a `setup.sh` that does the whole install.
 
-1. Start the server on the host machine.
-2. Find its LAN IP (`ipconfig` on Windows, `ifconfig` on macOS/Linux).
-3. Generate a QR code pointing at `http://<that-ip>:3000`.
-4. Make sure the host firewall allows inbound connections on the port.
-5. Open `http://<that-ip>:3000/display` on a laptop or TV at the stand — it
-   generates the QR code for you and shows the live leaderboard.
+```
+  players' phones                      laptop at the stand
+  (mobile data or any wifi)            (browser, shows QR + leaderboard)
+         |                                      |
+         |            internet                  |
+         +----------------+---------------------+
+                          |
+                     your server
+```
 
-Everyone must be on the same network — this is not exposed to the internet.
+The laptop serves nothing; it just opens `/display` from the server. On the
+day: open `https://your-domain/display`, press F11, done.
+
+Hosting publicly rather than on a laptop matters because **campus and guest
+wifi networks commonly use client isolation**, which blocks phone-to-laptop
+connections even when both are on the same network. That failure only shows
+up at the venue, with a queue of people waiting.
+
+### Local network instead
+
+If you do run it from a laptop on the venue wifi, open
+`http://<laptop-lan-ip>:3000/display` — the QR encodes whatever address the
+page was opened at. Test it from a phone **on that same wifi** before the
+event, not just from the laptop itself.
 
 ## Project layout
 
@@ -39,8 +68,17 @@ Everyone must be on the same network — this is not exposed to the internet.
 server.js      Express app, API routes, input validation
 db.js          SQLite schema and queries
 db/            Database file lives here (mountable as a volume)
+Dockerfile     Production container image
+docker-compose.yml  How to run it
+DEPLOYING.md   Step-by-step hosting guide
+deploy/
+  setup.sh     Bare-metal install (no Docker)
+  cspp-flappy.service  systemd unit
+  nginx.conf   Reverse proxy + HTTPS template
+  README.md    Deployment guide
 scripts/
   players.js   Read-only CLI for inspecting the database
+  backup.js    Safe database backup (WAL-aware)
   check-mascot.js  Validate the mascot sprite
   check-scroll.js  Verify background layers scroll smoothly
   check-obstacles.js  Verify obstacle detail does not flicker
@@ -133,10 +171,17 @@ It shows a QR code to the game, a QR code to society sign-up, the live
 top ten, and running totals. It refreshes itself every 5 seconds, so it can
 be left alone all day.
 
-**Open it at the machine's LAN IP, not `localhost`.** The QR code encodes
-whatever address the page itself was opened at, so opening it at
-`localhost` produces a QR code no phone can reach. The page detects this
-and shows a warning rather than failing silently.
+**Open it at the address players should scan, not `localhost`.** The QR code
+encodes whatever address the page itself was opened at, so opening it at
+`localhost` produces a QR code no phone can reach. The page detects that and
+warns rather than failing silently.
+
+To point the QR somewhere other than the address the screen is browsing — a
+short vanity domain in front of the server, say — append `?url=`:
+
+```text
+https://your-domain/display?url=https://play.yourdomain.com
+```
 
 QR codes are rendered server-side (`GET /api/qr?url=...`) so the screen
 needs no QR library and no internet access — venue Wi-Fi often has no route

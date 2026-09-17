@@ -6,7 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "backup": "node scripts/backup.js",
+    "players": "node scripts/players.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

@@ -1,0 +1,31 @@
+# Keep the build context small and the image clean.
+
+# Installed inside the image for the right platform — copying the host's
+# node_modules would ship Windows-built native binaries to a Linux container.
+node_modules/
+
+# The live database. It belongs on a mounted volume, never baked into an
+# image where a rebuild would overwrite it.
+db/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+.git/
+.gitignore
+
+# Docs and deployment scripts are not needed at runtime
+README.md
+deploy/
+*.md
+
+# Local scratch
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# The source mascot lives in public/mascot.png; this root copy is the
+# original artwork, not needed in the image.
+chud_flip.png

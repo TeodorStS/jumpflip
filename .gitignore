@@ -3,6 +3,10 @@ node_modules/
 # SQLite database and WAL sidecar files. The db/ folder itself is kept
 # (see db/.gitkeep) so it can be mounted as a volume.
 db/*.sqlite
+flappy-backup.sqlite
+flappy-backup.sqlite-shm
+flappy-backup.sqlite-wal
+players.csv
 db/*.sqlite-shm
 db/*.sqlite-wal
 

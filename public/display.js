@@ -38,10 +38,32 @@
 
   /* --- QR codes -------------------------------------------------- */
 
-  /* The game URL is whatever origin this page was served from, minus the
-     page itself. Open the display at the machine's LAN IP and the QR code
-     is automatically right — no config to forget or leave stale. */
-  const gameUrl = window.location.origin + '/';
+  /* The game URL defaults to whatever origin this page was served from, so
+     opening the display straight from the server always produces a correct
+     QR code with nothing to configure.
+
+     An explicit override is supported for the case where the address you
+     want players to scan differs from the one this screen is browsing —
+     a short domain in front of the server, say:
+
+       ?url=https://flappy.example.com
+
+     Only http(s) is accepted; the server rejects anything else anyway. */
+  const override = new URLSearchParams(window.location.search).get('url');
+  let gameUrl = window.location.origin + '/';
+
+  if (override) {
+    try {
+      const parsed = new URL(override);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        gameUrl = parsed.href;
+      } else {
+        console.warn('Ignoring ?url= override: only http and https are allowed.');
+      }
+    } catch {
+      console.warn('Ignoring ?url= override: not a valid absolute URL.');
+    }
+  }
 
   qrGame.src = '/api/qr?url=' + encodeURIComponent(gameUrl);
   qrJoin.src = '/api/qr?url=' + encodeURIComponent(SOCIETY_URL);
@@ -51,9 +73,12 @@
 
   /* A QR code pointing at localhost is unreachable from any phone, which
      is a silent failure at a stand — the code scans fine and then the page
-     never loads. Warn loudly instead. */
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+     never loads. Warn loudly instead.
+
+     Checked against the URL actually being encoded, not the page's own
+     address, so an explicit override of a real public URL is not flagged. */
+  const encodedHost = new URL(gameUrl).hostname;
+  if (encodedHost === 'localhost' || encodedHost === '127.0.0.1' || encodedHost === '::1') {
     warningEl.classList.remove('hidden');
   }
 
