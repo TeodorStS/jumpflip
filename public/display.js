@@ -7,6 +7,8 @@
      - QR code to society sign-up
      - live top-N leaderboard with event totals; N is picked on the
        screen (10, 20, or any number up to 100)
+     - mascots beside the title that jump when someone takes the lead,
+       and fly-bys along the top (all CSS; see display.css)
 
    Polls the API rather than holding a socket open: the data changes
    every few seconds at most, and a plain fetch survives Wi-Fi drops
@@ -205,6 +207,22 @@
   // highlighted rather than silently replaced.
   let previous = new Map();
 
+  // "student_number:score" of the leader; null until the first draw, so
+  // opening the page does not count as someone taking the lead.
+  let leader = null;
+  let celebrateTimer = 0;
+
+  /** Make the mascots by the title jump (see .celebrate in display.css). */
+  function celebrate() {
+    document.body.classList.remove('celebrate');
+    void document.body.offsetWidth;   // restart the jump if one is running
+    document.body.classList.add('celebrate');
+    clearTimeout(celebrateTimer);
+    celebrateTimer = setTimeout(function () {
+      document.body.classList.remove('celebrate');
+    }, 2000);
+  }
+
   /* Rows are sized for at least MIN_SIZED_ROWS, so three players look like
      the top of a list rather than three giant bars — but never for more
      rows than are actually there, so a top 100 with twelve players still
@@ -225,8 +243,14 @@
     if (!entries.length) {
       setStatus('No scores yet — be the first!');
       previous = new Map();
+      leader = '';
       return;
     }
+
+    // A new leader, or the leader beating their own score.
+    const top = entries[0].student_number + ':' + entries[0].best_score;
+    if (leader !== null && top !== leader) celebrate();
+    leader = top;
 
     const next = new Map();
 

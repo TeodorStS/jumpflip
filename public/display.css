@@ -53,6 +53,7 @@ body {
 /* --- Header ---------------------------------------------------- */
 
 .head {
+  position: relative;
   text-align: center;
   flex: 0 0 auto;
 }
@@ -71,6 +72,101 @@ body {
   color: var(--text-dim);
   letter-spacing: 2px;
   text-transform: uppercase;
+}
+
+/* --- Mascots --------------------------------------------------- */
+
+/* A pair either side of the title, sized from the header's own height so
+   they fit any screen, standing on the header's baseline. */
+.crew {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(8px, 1.4vw, 28px);
+  pointer-events: none;
+}
+
+.crew-left  { left: 2%; }
+.crew-right { right: 2%; }
+
+.mate {
+  display: block;
+  height: 112%;
+  width: auto;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45));
+  animation: bob 2.4s ease-in-out infinite alternate;
+}
+
+/* Out of step with each other, so they never bob in unison */
+.mate-chud { height: 90%; animation-duration: 1.7s; animation-delay: -.9s; }
+.crew-right .mate-duck { animation-delay: -1.3s; }
+.crew-right .mate-chud { animation-delay: -.4s; }
+
+/* The right-hand pair is mirrored, for symmetry */
+.crew-right .mate { transform: scaleX(-1); }
+
+@keyframes bob {
+  from { translate: 0 -5%; rotate: -3deg; }
+  to   { translate: 0 5%;  rotate: 3deg; }
+}
+
+/* Someone took the lead: display.js adds .celebrate for a moment and
+   the mascots jump. */
+.celebrate .crew { animation: hop .45s ease-out 4; }
+
+@keyframes hop {
+  0%, 100% { translate: 0 0; }
+  45%      { translate: 0 -18%; }
+}
+
+/* Fly-bys along the top of the screen, above the header and clear of the
+   QR codes and the leaderboard. Each flight takes about 8s of a 34s
+   cycle, and the two are half a cycle apart, so one crosses every ~17s. */
+.flyer {
+  position: fixed;
+  top: 1.5vh;
+  left: 0;
+  z-index: 5;
+  height: 8vh;
+  pointer-events: none;
+  translate: -20vw 0;
+  animation: fly-right 34s linear infinite;
+}
+
+.flyer img {
+  display: block;
+  height: 100%;
+  width: auto;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45));
+  animation: flap .5s ease-in-out infinite alternate;
+}
+
+.flyer-chud {
+  height: 7vh;
+  animation-name: fly-left;
+  animation-delay: -17s;
+}
+
+@keyframes fly-right {
+  0%        { translate: -20vw 0; }
+  24%, 100% { translate: 120vw 0; }
+}
+
+@keyframes fly-left {
+  0%        { translate: 120vw 0; }
+  24%, 100% { translate: -20vw 0; }
+}
+
+@keyframes flap {
+  from { translate: 0 -18%; rotate: -8deg; }
+  to   { translate: 0 18%;  rotate: 6deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mate, .celebrate .crew { animation: none; }
+  .flyer { display: none; }
 }
 
 /* --- Layout ---------------------------------------------------- */
@@ -421,4 +517,7 @@ body:not(.awake) { cursor: none; }
   /* Not enough width for title and picker side by side */
   .board-head { grid-template-columns: 1fr; justify-items: center; }
   .board-head h2, .top-picker { grid-column: 1; justify-self: center; }
+
+  /* ...or for mascots beside the title; the fly-bys still visit */
+  .crew { display: none; }
 }

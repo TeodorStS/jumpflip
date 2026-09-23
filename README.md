@@ -19,6 +19,13 @@ Set `PORT` to change the port, and `DB_DIR` to move the database:
 PORT=8080 DB_DIR=/data npm start
 ```
 
+The dev page (`/dev`) stays switched off until `ADMIN_PASSWORD` is set:
+
+```bash
+ADMIN_PASSWORD=pick-something npm start                 # macOS / Linux / Git Bash
+$env:ADMIN_PASSWORD="pick-something"; npm start         # Windows PowerShell
+```
+
 ## Running it with Docker
 
 ```bash
@@ -87,12 +94,13 @@ public/
   game.js      Game loop, rendering, API calls
   style.css    Layout and overlay styling
   mascot.png   The CS++ mascot sprite
+  bitflip.png  The party-hat mascot for 5 years of CS++ (display screen)
   display.html Stand display screen (QR codes + live leaderboard)
-  display.css  Display screen styling
+  display.css  Display screen styling, mascot animations
   display.js   Display screen polling, QR wiring, how-many picker
   dev.html     Dev page: every player with student numbers, CSV, monitor
   dev.css      Dev page styling
-  dev.js       Dev page polling
+  dev.js       Dev page polling, search, attempt history, deletion
 ```
 
 ## Society sign-up placement
@@ -145,14 +153,25 @@ the server is live.
 
 ### From the browser
 
-`http://localhost:3000/dev` lists every player with their student number,
-best first, and has an **Export CSV** button for picking the winners. It
-refreshes itself every 5 seconds and doubles as a live monitor: players,
-games, top score, time since the last game and server uptime.
+`http://localhost:3000/dev` is the organisers' page, behind a password:
 
-**It has no password** — anyone who can reach the server can open it and see
-every student number. Keep the link among the organisers and never put it on
-the stand screen.
+- every player with their student number, best first, with their number of
+  attempts, average score and when they last played
+- search by name or student number
+- **Export CSV** for picking the winners
+- **Delete** a player and all their attempts, or click an attempt count to
+  see every attempt and delete a single one. The player's best score is
+  worked out again from what is left, and deleting their only attempt
+  removes them. Each deletion is written to the server log.
+- a live monitor, refreshing every 5 seconds: players, attempts, top and
+  average score, attempts in the last 10 minutes, time since the last
+  attempt, and server uptime
+
+**The password** is `ADMIN_PASSWORD` — set in `docker-compose.yml` on the
+server, or in the environment when running locally (see *Running it*). The
+browser asks for it once; any username works. With no password set, `/dev`
+is switched off rather than left open. Never put this page on the stand
+screen.
 
 ### With a GUI
 
@@ -178,6 +197,11 @@ http://<machine-ip>:3000/display
 It shows a QR code to the game, a QR code to society sign-up, the live
 leaderboard, and running totals. It refreshes itself every 5 seconds, so it
 can be left alone all day.
+
+**Mascots.** The CS++ mascot and the 5-year party duck bob either side of the
+title, jump whenever someone takes the lead, and take turns flying across
+the top of the screen — kept clear of the QR codes and the leaderboard. All
+CSS; switched off for anyone who has asked their system for reduced motion.
 
 **Choosing how many players to show.** The board shows the top 10 by
 default. Move the mouse and a picker appears next to the title: **10**,
@@ -257,23 +281,51 @@ vector.
 
 Returns `{"ok": true}`.
 
-### `GET /dev/api/players`
+### Dev endpoints
 
-Every player **with student number**, best first, plus the event totals and
-monitor figures the dev page shows. No password.
+Everything under `/dev` needs the password as HTTP Basic auth (any
+username), and returns `503` when no `ADMIN_PASSWORD` is set. Times are
+SQLite UTC timestamps.
+
+#### `GET /dev/api/players`
+
+Every player **with student number**, best first, plus the monitor figures.
+`server_time` lets the page show "3m ago" without trusting the viewer's clock.
 
 ```json
 {
-  "players": [{ "student_number": "C00035654", "name": "Jane Doe", "best_score": 12, "run_count": 3 }],
-  "stats": { "players": 42, "runs": 118, "top_score": 31, "avg_run_score": 7.4 },
-  "last_game_secs_ago": 14,
+  "players": [{
+    "student_number": "C00035654", "name": "Jane Doe", "best_score": 12,
+    "run_count": 3, "avg_score": 8.3,
+    "first_played": "2026-09-23 13:02:11", "last_played": "2026-09-23 14:40:05"
+  }],
+  "stats": {
+    "players": 42, "runs": 118, "top_score": 31, "avg_run_score": 7.4,
+    "runs_last_10m": 9, "last_run_at": "2026-09-23 14:40:05"
+  },
+  "server_time": 1790000000000,
   "uptime_secs": 5400
 }
 ```
 
-### `GET /dev/players.csv`
+#### `GET /dev/api/players/:studentNumber/runs`
 
-The same list as a CSV download: `rank,name,student_number,best_score,games`.
+That player's attempts, newest first: `{ "runs": [{ "id": 17, "score": 12, "played_at": "…" }] }`.
+
+#### `DELETE /dev/api/players/:studentNumber`
+
+Deletes the player and all their attempts. `404` if there is no such player.
+
+#### `DELETE /dev/api/runs/:id`
+
+Deletes one attempt and recomputes the player's best score (ties still break
+by who reached it first). Deleting a player's only attempt removes the
+player: `{ "deleted": true, "student_number": "…", "player_removed": true }`.
+
+#### `GET /dev/players.csv`
+
+The full list as a download:
+`rank,name,student_number,best_score,attempts,avg_score,first_played_utc,last_played_utc`.
 Names that start with `=`, `+`, `-` or `@` are prefixed with `'` so a
 spreadsheet cannot run them as formulas.
 

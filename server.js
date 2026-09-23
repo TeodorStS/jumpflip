@@ -6,18 +6,20 @@
    Endpoints:
      POST /api/score        { student_number, name, score }
      GET  /api/leaderboard?limit=10
-     GET  /dev              every player with student numbers + monitor
+     GET  /dev              every player with student numbers, monitor,
+                            deletion — behind ADMIN_PASSWORD
      GET  /dev/players.csv  the same list as a download
    =============================================================== */
 
 'use strict';
 
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const QRCode = require('qrcode');
 const {
   submitScore, getLeaderboard, getStats, DB_PATH,
-  getAllPlayers, getSecondsSinceLastRun
+  getAllPlayers, getDevStats, getPlayerRuns, deletePlayer, deleteRun
 } = require('./db');
 
 const app = express();
@@ -252,13 +254,63 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 /* ---------------------------------------------------------------
    Dev page (/dev)
 
-   Every player with their student number, a CSV export for working
-   out the winners, and a live view of the event.
+   Every player with their student number and attempt figures, a CSV
+   export for working out the winners, a live monitor of the event,
+   and deletion of players or single attempts.
 
-   There is no password: anyone who opens /dev sees every student
-   number. Keep the link among the organisers and never put this page
-   on the stand screen — /display is the public one.
+   Password-protected with ADMIN_PASSWORD, which is set in
+   docker-compose.yml on the server. Without one, /dev is switched off
+   rather than left open. Never put this page on the stand screen —
+   /display is the public one.
    --------------------------------------------------------------- */
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const MIN_PASSWORD_LENGTH = 12;
+
+if (!ADMIN_PASSWORD) {
+  console.warn('[dev] ADMIN_PASSWORD is not set, so /dev is switched off.');
+} else if (ADMIN_PASSWORD.length < MIN_PASSWORD_LENGTH) {
+  console.warn(`[dev] ADMIN_PASSWORD is under ${MIN_PASSWORD_LENGTH} characters. ` +
+    'It guards every student number — use a longer one.');
+}
+
+/** Constant-time compare, so response timing cannot reveal how close a guess was. */
+function safeEqual(a, b) {
+  // Hashing first gives equal-length buffers, which timingSafeEqual requires.
+  const hashA = crypto.createHash('sha256').update(String(a)).digest();
+  const hashB = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
+
+/**
+ * HTTP Basic auth: no login page, sessions or cookies, and every browser
+ * asks for it natively and remembers it. Only the password is checked;
+ * any username works. It travels with every request, which is why the
+ * server should be on HTTPS (DEPLOYING.md step 6).
+ */
+function requirePassword(req, res, next) {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).type('text/plain').send(
+      'The dev page is switched off.\n\n' +
+      'Set ADMIN_PASSWORD in docker-compose.yml, then run: docker compose up -d\n'
+    );
+  }
+
+  const [scheme, encoded] = (req.headers.authorization || '').split(' ');
+
+  if (scheme === 'Basic' && encoded) {
+    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    const password = decoded.slice(decoded.indexOf(':') + 1);   // "username:password"
+
+    if (safeEqual(password, ADMIN_PASSWORD)) return next();
+    console.warn('[dev] wrong password from ' + req.ip);
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="CS++ Flappy dev", charset="UTF-8"');
+  return res.status(401).type('text/plain').send('Password required.\n');
+}
+
+app.use('/dev', requirePassword);
 
 // Keep student numbers out of browser and proxy caches, and out of
 // search engines.
@@ -274,20 +326,85 @@ app.get('/dev', (req, res) => {
 
 /**
  * GET /dev/api/players
- * Every player with their student number, plus the event totals and
- * server uptime the page shows as its monitor.
+ * Every player with their student number and attempt figures, plus the
+ * monitor's totals. server_time lets the page work out "3m ago" without
+ * trusting the clock of the laptop viewing it.
  */
 app.get('/dev/api/players', (req, res) => {
   try {
     return res.json({
       players: getAllPlayers(),
-      stats: getStats(),
-      last_game_secs_ago: getSecondsSinceLastRun(),
+      stats: getDevStats(),
+      server_time: Date.now(),
       uptime_secs: Math.floor(process.uptime())
     });
   } catch (err) {
     console.error('GET /dev/api/players failed:', err);
     return res.status(500).json({ error: 'Could not load players.' });
+  }
+});
+
+/** The :studentNumber route parameter, validated, or null. */
+function studentNumberParam(req) {
+  const value = cleanString(req.params.studentNumber).toUpperCase();
+  return STUDENT_NUMBER_PATTERN.test(value) ? value : null;
+}
+
+/**
+ * GET /dev/api/players/:studentNumber/runs
+ * One player's attempts, newest first.
+ */
+app.get('/dev/api/players/:studentNumber/runs', (req, res) => {
+  const studentNumber = studentNumberParam(req);
+  if (!studentNumber) return res.status(400).json({ error: 'Invalid student number.' });
+
+  try {
+    return res.json({ runs: getPlayerRuns(studentNumber) });
+  } catch (err) {
+    console.error('GET /dev/api/players/:id/runs failed:', err);
+    return res.status(500).json({ error: 'Could not load attempts.' });
+  }
+});
+
+/**
+ * DELETE /dev/api/players/:studentNumber
+ * Removes a player and all of their attempts.
+ */
+app.delete('/dev/api/players/:studentNumber', (req, res) => {
+  const studentNumber = studentNumberParam(req);
+  if (!studentNumber) return res.status(400).json({ error: 'Invalid student number.' });
+
+  try {
+    if (!deletePlayer(studentNumber)) return res.status(404).json({ error: 'No such player.' });
+
+    // Deletions cannot be undone, so leave a trail in the logs.
+    console.warn('[dev] deleted player ' + studentNumber);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /dev/api/players/:id failed:', err);
+    return res.status(500).json({ error: 'Could not delete player.' });
+  }
+});
+
+/**
+ * DELETE /dev/api/runs/:id
+ * Removes one attempt and recomputes that player's best score. Their
+ * only attempt takes the player with it.
+ */
+app.delete('/dev/api/runs/:id', (req, res) => {
+  const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : 0;
+  if (id < 1) return res.status(400).json({ error: 'Invalid attempt id.' });
+
+  try {
+    const result = deleteRun(id);
+    if (!result.deleted) return res.status(404).json({ error: 'No such attempt.' });
+
+    console.warn('[dev] deleted attempt ' + id + ' of ' + result.student_number +
+      (result.player_removed ? ', their last, so the player was removed too' : ''));
+    return res.json(result);
+  } catch (err) {
+    console.error('DELETE /dev/api/runs/:id failed:', err);
+    return res.status(500).json({ error: 'Could not delete attempt.' });
   }
 });
 
@@ -308,17 +425,23 @@ function csvField(value) {
  */
 app.get('/dev/players.csv', (req, res) => {
   try {
-    const lines = ['rank,name,student_number,best_score,games'];
+    const lines = [
+      'rank,name,student_number,best_score,attempts,avg_score,first_played_utc,last_played_utc'
+    ];
 
     getAllPlayers().forEach((p, i) => {
-      lines.push([i + 1, csvField(p.name), p.student_number, p.best_score, p.run_count].join(','));
+      lines.push([
+        i + 1, csvField(p.name), p.student_number, p.best_score,
+        p.run_count, p.avg_score, p.first_played || '', p.last_played || ''
+      ].join(','));
     });
 
     const date = new Date().toISOString().slice(0, 10);
     res.attachment(`cspp-flappy-players-${date}.csv`);
     // The byte-order mark makes Excel read the file as UTF-8, so names
     // with fadas (Seán, Ní Bhriain) come through intact.
-    return res.send('﻿' + lines.join('\r\n') + '\r\n');
+    const bom = String.fromCharCode(0xFEFF);
+    return res.send(bom + lines.join('\r\n') + '\r\n');
   } catch (err) {
     console.error('GET /dev/players.csv failed:', err);
     return res.status(500).type('text/plain').send('Could not export players.\n');

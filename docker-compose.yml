@@ -5,7 +5,8 @@
 #   docker compose down              stop
 #
 # Then open /display for the stand screen, and /dev for every player with
-# student numbers, the CSV export and a live monitor.
+# student numbers, the CSV export, deletion and a live monitor — /dev needs
+# ADMIN_PASSWORD below.
 #
 # The database lives in a named volume, so `down`, rebuilds and image
 # upgrades all leave the scores intact. Only `down -v` deletes it.
@@ -34,6 +35,12 @@ services:
       PORT: 3000
       # Must match the mount below.
       DB_DIR: /data
+
+      # Password for the /dev page (the username can be anything). Type it
+      # between the quotes here on the server — don't commit it to GitHub.
+      # Left empty, /dev is switched off. Use 12+ characters: it guards
+      # every student number. A "$" in the password must be written "$$".
+      ADMIN_PASSWORD: ""
 
     volumes:
       - flappy-data:/data

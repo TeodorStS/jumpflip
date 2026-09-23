@@ -288,23 +288,51 @@ padlock in the address bar.
 
 ## Step 6.5 — The dev page
 
-Nothing to set up — it is part of the container. Open:
+`/dev` is the organisers' page:
 
+- **Every player with their student number**, best first, with their number
+  of attempts, average score and when they last played, plus a search box
+- **Export CSV** — the whole list as a spreadsheet, for picking the winners
+- **Delete** a player and all their attempts, or click a player's attempt
+  count to see every attempt and delete just one — their best score is
+  worked out again from what is left
+- **Live monitor** — players, attempts, top and average score, attempts in
+  the last 10 minutes, time since the last attempt, and server uptime,
+  refreshing every 5 seconds. A red dot means the page cannot reach the
+  server; uptime dropping back to seconds means the server restarted.
+
+It is **switched off until you give it a password.** On the server:
+
+```bash
+nano docker-compose.yml
 ```
-https://flappy.yourdomain.com/dev
+
+Find this line and type a password between the quotes:
+
+```yaml
+      ADMIN_PASSWORD: ""
 ```
 
-- **Every player with their student number**, best first
-- **Export CSV** — the same list as a spreadsheet, for picking the winners
-- **Live monitor** — players, games, top score, time since the last game
-  and server uptime, refreshing every 5 seconds
+Use 12 or more characters — it guards every student number.
+`openssl rand -base64 18` makes a good one. If your password contains a `$`,
+write it as `$$`. Save (Ctrl+O, Enter, Ctrl+X) and apply it:
 
-A red dot means the page cannot reach the server. Uptime dropping back to a
-few seconds means the server restarted.
+```bash
+docker compose up -d
+```
 
-> **There is no password.** Anyone who opens `/dev` sees every student
-> number, and the repository is public, so the address is not a secret.
-> Keep the link among the organisers.
+Open **`https://flappy.yourdomain.com/dev`**. The browser asks for a username
+and password: type anything as the username (`admin` is fine) and your
+password. It remembers them until you close the browser.
+
+> **Do this after step 6 (HTTPS).** The browser sends the password with every
+> request; over plain `http`, anyone on the same Wi-Fi can read it.
+
+> **Keep the password off GitHub.** Edit `docker-compose.yml` on the server
+> only, and never commit that change.
+
+**Deleting cannot be undone.** Every deletion is written to the log
+(`docker compose logs | grep deleted`), so you can see what was removed.
 
 **Never put `/dev` on the stand screen.** Use `/display` for the public
 screen — it shows names and scores only.
@@ -355,6 +383,7 @@ screen — it shows names and scores only.
 | Start after stopping | `docker compose up -d` |
 | Deploy a code change | `git pull && docker compose up -d --build` |
 | Check status | `docker compose ps` |
+| Change the dev password | edit `ADMIN_PASSWORD` in `docker-compose.yml`, then `docker compose up -d` |
 
 **Deploying a change never touches the scores.** The database lives in a
 Docker volume, separate from the container. I tested this: destroying the
@@ -371,8 +400,8 @@ player, best first, with their student number.
 Or from the server's command line:
 
 ```bash
-# The same CSV as the button
-curl -s http://localhost:3000/dev/players.csv > players.csv
+# The same CSV as the button (put your dev password after "admin:")
+curl -s -u 'admin:YOUR-PASSWORD' http://localhost:3000/dev/players.csv > players.csv
 
 # Summary
 docker compose exec flappy npm run players -- --stats
@@ -445,6 +474,21 @@ The process is running but not answering. Check the logs, then:
 
 ```bash
 docker compose exec flappy curl -v http://127.0.0.1:3000/api/health
+```
+
+### `/dev` says "The dev page is switched off"
+
+`ADMIN_PASSWORD` in `docker-compose.yml` is still empty. Set it (step 6.5),
+then `docker compose up -d`.
+
+### `git pull` refuses: "local changes to docker-compose.yml would be overwritten"
+
+That is your password edit meeting an update to the same file. Set it
+aside, update, and put it back:
+
+```bash
+git stash && git pull && git stash pop
+docker compose up -d --build
 ```
 
 ### Scores disappeared

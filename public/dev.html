@@ -24,16 +24,24 @@
        open all day on an organiser's laptop. -->
   <section class="stats">
     <div class="stat"><span class="stat-label">Players</span><span class="stat-value" id="stat-players">–</span></div>
-    <div class="stat"><span class="stat-label">Games</span><span class="stat-value" id="stat-runs">–</span></div>
+    <div class="stat"><span class="stat-label">Attempts</span><span class="stat-value" id="stat-runs">–</span></div>
     <div class="stat"><span class="stat-label">Top score</span><span class="stat-value" id="stat-top">–</span></div>
-    <div class="stat"><span class="stat-label">Last game</span><span class="stat-value" id="stat-last">–</span></div>
-    <div class="stat"><span class="stat-label">Server uptime</span><span class="stat-value" id="stat-uptime">–</span></div>
+    <div class="stat"><span class="stat-label">Avg score</span><span class="stat-value" id="stat-avg">–</span></div>
+    <div class="stat" title="Attempts in the last 10 minutes"><span class="stat-label">Last 10 min</span><span class="stat-value" id="stat-recent">–</span></div>
+    <div class="stat"><span class="stat-label">Last attempt</span><span class="stat-value" id="stat-last">–</span></div>
+    <div class="stat" title="Dropping back to seconds means the server restarted"><span class="stat-label">Server uptime</span><span class="stat-value" id="stat-uptime">–</span></div>
   </section>
 
   <p class="note">
     Shows every student number — keep it off the stand screen. The public
     board is <a href="/display">/display</a>.
   </p>
+
+  <div class="toolbar">
+    <input id="filter" class="filter" type="search" autocomplete="off"
+           placeholder="Find a name or student number…" aria-label="Find a player">
+    <span id="count" class="count"></span>
+  </div>
 
   <div class="table-wrap">
     <table class="table">
@@ -43,14 +51,40 @@
           <th>Name</th>
           <th>Student number</th>
           <th class="num">Best</th>
-          <th class="num">Games</th>
+          <th class="num" title="Click a number to see every attempt">Attempts</th>
+          <th class="num col-avg">Avg</th>
+          <th class="col-when">Last played</th>
+          <th class="col-actions"><span class="sr-only">Delete</span></th>
         </tr>
       </thead>
       <tbody id="rows">
-        <tr><td colspan="5" class="empty">Loading…</td></tr>
+        <tr><td colspan="8" class="empty">Loading…</td></tr>
       </tbody>
     </table>
   </div>
+
+  <!-- One player's attempts, opened from the Attempts column -->
+  <dialog id="player" class="dialog" aria-labelledby="player-name">
+    <div class="dialog-inner">
+      <header class="dialog-head">
+        <div>
+          <h2 id="player-name"></h2>
+          <p id="player-id" class="player-id"></p>
+        </div>
+        <button id="player-close" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </header>
+
+      <p id="player-summary" class="summary"></p>
+
+      <ol id="runs" class="runs"></ol>
+
+      <footer class="dialog-foot">
+        <button id="player-delete" class="btn-danger" type="button">Delete player</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script src="/dev.js"></script>
 </body>

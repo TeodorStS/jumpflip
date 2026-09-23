@@ -180,8 +180,9 @@ function getStats() {
 /* ---------------------------------------------------------------
    Dev page queries
 
-   These return every student number, so they are kept apart from the
-   public functions above and used only by the /dev routes.
+   These return every student number or delete records, so they are
+   kept apart from the public functions above and used only by the
+   password-protected /dev routes.
    --------------------------------------------------------------- */
 
 // Same order as the public leaderboard, so rank 1 here is rank 1 there.
@@ -189,33 +190,106 @@ const selectAllPlayers = db.prepare(`
   SELECT p.student_number,
          p.name,
          p.best_score,
-         COUNT(r.id) AS run_count
+         COUNT(r.id)                         AS run_count,
+         COALESCE(ROUND(AVG(r.score), 1), 0) AS avg_score,
+         MIN(r.played_at)                    AS first_played,
+         MAX(r.played_at)                    AS last_played
     FROM players p
     LEFT JOIN runs r ON r.student_number = p.student_number
    GROUP BY p.student_number
    ORDER BY p.best_score DESC, p.updated_at ASC
 `);
 
-// Worked out by SQLite, so it uses the same clock that stamped played_at.
-const selectSecondsSinceLastRun = db.prepare(`
-  SELECT CAST(strftime('%s', 'now') - strftime('%s', MAX(played_at)) AS INTEGER) AS secs
+// Everything the dev page's monitor shows, read at one point in time.
+const selectDevStats = db.prepare(`
+  SELECT
+    (SELECT COUNT(*) FROM players)                       AS players,
+    (SELECT COUNT(*) FROM runs)                          AS runs,
+    (SELECT COALESCE(MAX(best_score), 0) FROM players)   AS top_score,
+    (SELECT COALESCE(ROUND(AVG(score), 1), 0) FROM runs) AS avg_run_score,
+    (SELECT COUNT(*) FROM runs
+      WHERE played_at >= datetime('now', '-10 minutes')) AS runs_last_10m,
+    (SELECT MAX(played_at) FROM runs)                    AS last_run_at
+`);
+
+const selectPlayerRuns = db.prepare(`
+  SELECT id, score, played_at
     FROM runs
+   WHERE student_number = ?
+   ORDER BY played_at DESC, id DESC
+`);
+
+const deletePlayerStmt = db.prepare('DELETE FROM players WHERE student_number = ?');
+const deleteRunStmt = db.prepare('DELETE FROM runs WHERE id = ?');
+const selectRunOwner = db.prepare('SELECT student_number FROM runs WHERE id = ?');
+const countPlayerRuns = db.prepare('SELECT COUNT(*) AS n FROM runs WHERE student_number = ?');
+
+// After an attempt is deleted the stored best may be the deleted score, so
+// recompute it from what remains. updated_at goes back to when that best
+// was first reached, because leaderboard ties are broken by it.
+const recalcBest = db.prepare(`
+  UPDATE players
+     SET best_score = (SELECT MAX(score) FROM runs WHERE student_number = @sn),
+         updated_at = (SELECT MIN(played_at) FROM runs
+                        WHERE student_number = @sn
+                          AND score = (SELECT MAX(score) FROM runs WHERE student_number = @sn))
+   WHERE student_number = @sn
 `);
 
 /**
- * Every player with their student number and number of games, best first.
+ * Every player with their student number and attempt figures, best first.
  */
 function getAllPlayers() {
   return selectAllPlayers.all();
 }
 
 /**
- * Seconds since the last game was recorded, or null if none have been.
- * @returns {number|null}
+ * Totals, recent activity and the time of the last attempt.
+ * @returns {{ players: number, runs: number, top_score: number, avg_run_score: number,
+ *             runs_last_10m: number, last_run_at: string|null }}
  */
-function getSecondsSinceLastRun() {
-  return selectSecondsSinceLastRun.get().secs;
+function getDevStats() {
+  return selectDevStats.get();
 }
+
+/**
+ * One player's attempts, newest first.
+ */
+function getPlayerRuns(studentNumber) {
+  return selectPlayerRuns.all(studentNumber);
+}
+
+/**
+ * Delete a player and, through ON DELETE CASCADE, all of their attempts.
+ * @returns {boolean} whether there was such a player
+ */
+function deletePlayer(studentNumber) {
+  return deletePlayerStmt.run(studentNumber).changes > 0;
+}
+
+/**
+ * Delete one attempt and recompute that player's best score.
+ *
+ * Deleting a player's only attempt removes the player too — otherwise
+ * they would stay on the leaderboard with a score of 0 they never got.
+ * One transaction, so the best score can never disagree with the attempts.
+ *
+ * @returns {{ deleted: boolean, student_number?: string, player_removed?: boolean }}
+ */
+const deleteRun = db.transaction((runId) => {
+  const run = selectRunOwner.get(runId);
+  if (!run) return { deleted: false };
+
+  deleteRunStmt.run(runId);
+
+  if (countPlayerRuns.get(run.student_number).n === 0) {
+    deletePlayerStmt.run(run.student_number);
+    return { deleted: true, student_number: run.student_number, player_removed: true };
+  }
+
+  recalcBest.run({ sn: run.student_number });
+  return { deleted: true, student_number: run.student_number, player_removed: false };
+});
 
 module.exports = {
   db,
@@ -223,7 +297,10 @@ module.exports = {
   getLeaderboard,
   getStats,
   DB_PATH,
-  // Dev page only — these include student numbers
+  // Dev page only — every caller must be behind the password
   getAllPlayers,
-  getSecondsSinceLastRun
+  getDevStats,
+  getPlayerRuns,
+  deletePlayer,
+  deleteRun
 };
