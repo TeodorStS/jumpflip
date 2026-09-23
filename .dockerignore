@@ -26,8 +26,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# The mascots used by the site live in public/ (mascot.png, and bitflip.png
-# cropped from the party-hat original). These root copies are the original
-# artwork, not needed in the image.
+# The source mascot lives in public/mascot.png; these root files are the
+# original artwork, not needed in the image.
 chud_flip.png
 bitflip5yr-removebg-preview_edited.png

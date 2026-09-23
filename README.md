@@ -94,9 +94,8 @@ public/
   game.js      Game loop, rendering, API calls
   style.css    Layout and overlay styling
   mascot.png   The CS++ mascot sprite
-  bitflip.png  The party-hat mascot for 5 years of CS++ (display screen)
   display.html Stand display screen (QR codes + live leaderboard)
-  display.css  Display screen styling, mascot animations
+  display.css  Display screen styling
   display.js   Display screen polling, QR wiring, how-many picker
   dev.html     Dev page: every player with student numbers, CSV, monitor
   dev.css      Dev page styling
@@ -197,11 +196,6 @@ http://<machine-ip>:3000/display
 It shows a QR code to the game, a QR code to society sign-up, the live
 leaderboard, and running totals. It refreshes itself every 5 seconds, so it
 can be left alone all day.
-
-**Mascots.** The CS++ mascot and the 5-year party duck bob either side of the
-title, jump whenever someone takes the lead, and take turns flying across
-the top of the screen — kept clear of the QR codes and the leaderboard. All
-CSS; switched off for anyone who has asked their system for reduced motion.
 
 **Choosing how many players to show.** The board shows the top 10 by
 default. Move the mouse and a picker appears next to the title: **10**,
