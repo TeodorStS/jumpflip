@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>CS++ Flappy — Dev</title>
+  <link rel="stylesheet" href="/dev.css">
+</head>
+<body>
+
+  <header class="head">
+    <div>
+      <h1><span class="prompt">&gt;</span> Dev</h1>
+      <p id="status" class="status">
+        <span id="live" class="live"></span>
+        <span id="status-text">Connecting…</span>
+      </p>
+    </div>
+    <a class="btn" href="/dev/players.csv" download>Export CSV</a>
+  </header>
+
+  <!-- Live monitor. Refreshes every few seconds, so this page can be left
+       open all day on an organiser's laptop. -->
+  <section class="stats">
+    <div class="stat"><span class="stat-label">Players</span><span class="stat-value" id="stat-players">–</span></div>
+    <div class="stat"><span class="stat-label">Games</span><span class="stat-value" id="stat-runs">–</span></div>
+    <div class="stat"><span class="stat-label">Top score</span><span class="stat-value" id="stat-top">–</span></div>
+    <div class="stat"><span class="stat-label">Last game</span><span class="stat-value" id="stat-last">–</span></div>
+    <div class="stat"><span class="stat-label">Server uptime</span><span class="stat-value" id="stat-uptime">–</span></div>
+  </section>
+
+  <p class="note">
+    Shows every student number — keep it off the stand screen. The public
+    board is <a href="/display">/display</a>.
+  </p>
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="col-rank">#</th>
+          <th>Name</th>
+          <th>Student number</th>
+          <th class="num">Best</th>
+          <th class="num">Games</th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="5" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script src="/dev.js"></script>
+</body>
+</html>

@@ -6,6 +6,8 @@
    Endpoints:
      POST /api/score        { student_number, name, score }
      GET  /api/leaderboard?limit=10
+     GET  /dev              every player with student numbers + monitor
+     GET  /dev/players.csv  the same list as a download
    =============================================================== */
 
 'use strict';
@@ -13,7 +15,10 @@
 const path = require('path');
 const express = require('express');
 const QRCode = require('qrcode');
-const { submitScore, getLeaderboard, getStats, DB_PATH } = require('./db');
+const {
+  submitScore, getLeaderboard, getStats, DB_PATH,
+  getAllPlayers, getSecondsSinceLastRun
+} = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -146,6 +151,10 @@ app.post('/api/score', (req, res) => {
   try {
     const result = submitScore(validation.value);
 
+    // One line per game, so `docker compose logs -f` doubles as a live feed.
+    console.log('[game] ' + validation.value.name + ' scored ' + validation.value.score +
+      (result.is_new_best ? ' (new best)' : ''));
+
     return res.status(result.is_new_player ? 201 : 200).json({
       student_number: validation.value.student_number,
       name: validation.value.name,
@@ -241,10 +250,87 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 /* ---------------------------------------------------------------
+   Dev page (/dev)
+
+   Every player with their student number, a CSV export for working
+   out the winners, and a live view of the event.
+
+   There is no password: anyone who opens /dev sees every student
+   number. Keep the link among the organisers and never put this page
+   on the stand screen — /display is the public one.
+   --------------------------------------------------------------- */
+
+// Keep student numbers out of browser and proxy caches, and out of
+// search engines.
+app.use('/dev', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
+
+app.get('/dev', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dev.html'));
+});
+
+/**
+ * GET /dev/api/players
+ * Every player with their student number, plus the event totals and
+ * server uptime the page shows as its monitor.
+ */
+app.get('/dev/api/players', (req, res) => {
+  try {
+    return res.json({
+      players: getAllPlayers(),
+      stats: getStats(),
+      last_game_secs_ago: getSecondsSinceLastRun(),
+      uptime_secs: Math.floor(process.uptime())
+    });
+  } catch (err) {
+    console.error('GET /dev/api/players failed:', err);
+    return res.status(500).json({ error: 'Could not load players.' });
+  }
+});
+
+/**
+ * Quote a value for CSV. Also defuses spreadsheet formulas: a player
+ * named "=HYPERLINK(...)" would otherwise run as a formula when the
+ * export is opened in Excel or Sheets.
+ */
+function csvField(value) {
+  let text = String(value);
+  if (/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+
+/**
+ * GET /dev/players.csv
+ * Every player, best first, as a spreadsheet download.
+ */
+app.get('/dev/players.csv', (req, res) => {
+  try {
+    const lines = ['rank,name,student_number,best_score,games'];
+
+    getAllPlayers().forEach((p, i) => {
+      lines.push([i + 1, csvField(p.name), p.student_number, p.best_score, p.run_count].join(','));
+    });
+
+    const date = new Date().toISOString().slice(0, 10);
+    res.attachment(`cspp-flappy-players-${date}.csv`);
+    // The byte-order mark makes Excel read the file as UTF-8, so names
+    // with fadas (Seán, Ní Bhriain) come through intact.
+    return res.send('﻿' + lines.join('\r\n') + '\r\n');
+  } catch (err) {
+    console.error('GET /dev/players.csv failed:', err);
+    return res.status(500).type('text/plain').send('Could not export players.\n');
+  }
+});
+
+/* ---------------------------------------------------------------
    Start
    --------------------------------------------------------------- */
 
 app.listen(PORT, () => {
   console.log(`CS++ Flappy running at http://localhost:${PORT}`);
+  console.log('Stand screen: /display   Dev page: /dev');
   console.log(`Database: ${DB_PATH}`);
 });

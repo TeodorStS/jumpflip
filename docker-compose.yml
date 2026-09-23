@@ -1,8 +1,11 @@
 # CS++ Flappy — production compose file.
 #
 #   docker compose up -d --build     start (or restart after a code change)
-#   docker compose logs -f           follow logs
+#   docker compose logs -f           follow logs (one line per game)
 #   docker compose down              stop
+#
+# Then open /display for the stand screen, and /dev for every player with
+# student numbers, the CSV export and a live monitor.
 #
 # The database lives in a named volume, so `down`, rebuilds and image
 # upgrades all leave the scores intact. Only `down -v` deletes it.

@@ -43,10 +43,25 @@
       <!-- Right: the live leaderboard -->
       <div class="col col-board">
         <div class="card card-leaderboard">
-          <h2>
-            Top players
-            <span id="live" class="live" title="Updating automatically"></span>
-          </h2>
+          <div class="board-head">
+            <h2>
+              Top <span id="top-count">10</span> players
+              <span id="live" class="live" title="Updating automatically"></span>
+            </h2>
+
+            <!-- How many players to show. Fades out while the mouse is still,
+                 so the public screen stays clean; move the mouse to bring it
+                 back. -->
+            <form id="top-picker" class="top-picker" role="group"
+                  aria-label="How many players to show" novalidate>
+              <button type="button" data-top="10" title="Show the top 10">10</button>
+              <button type="button" data-top="20" title="Show the top 20">20</button>
+              <input id="top-input" type="number" min="1" max="100" step="1"
+                     inputmode="numeric" placeholder="#" autocomplete="off"
+                     aria-label="Show this many players (1–100)"
+                     title="Type a number from 1 to 100 and press Enter">
+            </form>
+          </div>
 
           <ol id="leaderboard" class="leaderboard">
             <li class="status">Loading…</li>

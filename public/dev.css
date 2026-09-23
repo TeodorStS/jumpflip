@@ -1,0 +1,198 @@
+/* ---------------------------------------------------------------
+   CS++ Flappy — dev page
+
+   A working tool, not a showpiece: dense and scannable, and visually
+   distinct from the public screens so it is obvious at a glance that
+   this is the one showing student numbers.
+   --------------------------------------------------------------- */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --cs-gold: #ffc901;
+
+  --bg: #0c1016;
+  --surface: #151a23;
+  --surface-2: #1c222d;
+  --edge: #2a3140;
+
+  --text: #e8ecf4;
+  --text-dim: #8b95a8;
+  --ok: #3ddc84;
+  --bad: #ff5c6e;
+
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono",
+          Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+body { padding: 20px; max-width: 1000px; margin: 0 auto; }
+
+a { color: var(--cs-gold); }
+
+/* --- Header ---------------------------------------------------- */
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.head h1 { font-size: 22px; letter-spacing: -.5px; }
+.prompt { color: var(--cs-gold); }
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.status.bad { color: var(--bad); }
+
+/* Status dot: pulsing green while updates arrive, red when they stop */
+.live {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.live.ok  { background: var(--ok); animation: pulse 2s ease-in-out infinite; }
+.live.bad { background: var(--bad); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live.ok { animation: none; }
+}
+
+.btn {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: bold;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: var(--cs-gold);
+  color: var(--bg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:hover { filter: brightness(1.1); }
+.btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+/* --- Monitor --------------------------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stat {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.stat-value { font-size: 20px; font-weight: bold; white-space: nowrap; }
+
+.note {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+/* --- Table ----------------------------------------------------- */
+
+/* Scrolls sideways on a phone instead of widening the page */
+.table-wrap { overflow-x: auto; border-radius: 8px; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+
+.table th {
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: normal;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--edge);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--edge);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:hover { background: var(--surface-2); }
+
+.table .num { text-align: right; width: 72px; }
+
+.col-rank { width: 48px; color: var(--text-dim); }
+.col-name { overflow-wrap: anywhere; }
+
+/* Student number is the reason this page exists, so it gets emphasis */
+.col-id {
+  color: var(--cs-gold);
+  font-weight: bold;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
+
+.score { font-weight: bold; }
+
+/* The top three are the likely winners */
+tr.top1 { background: rgba(255, 201, 1, .1); }
+tr.top1 .score { color: var(--cs-gold); }
+tr.top2, tr.top3 { background: rgba(255, 255, 255, .03); }
+
+.empty {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 30px 12px !important;
+}
+
+/* --- Narrow screens -------------------------------------------- */
+
+@media (max-width: 600px) {
+  body { padding: 12px; }
+  .table th, .table td { padding: 8px 6px; }
+  .table .num { width: auto; }
+}

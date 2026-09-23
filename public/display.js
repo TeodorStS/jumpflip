@@ -5,7 +5,8 @@
      - QR code to the game, derived from the address this page was
        opened at, so there is nothing to configure
      - QR code to society sign-up
-     - live top-N leaderboard with event totals
+     - live top-N leaderboard with event totals; N is picked on the
+       screen (10, 20, or any number up to 100)
 
    Polls the API rather than holding a socket open: the data changes
    every few seconds at most, and a plain fetch survives Wi-Fi drops
@@ -18,8 +19,18 @@
   /* --- Tunables -------------------------------------------------- */
 
   const REFRESH_MS = 5000;     // how often to poll
-  const TOP_N = 10;            // rows to show
   const STALE_AFTER = 3;       // consecutive failures before flagging stale
+
+  const DEFAULT_TOP = 10;      // rows to show when nothing was chosen
+  const MAX_TOP = 100;         // the API's cap
+  const MIN_SIZED_ROWS = 10;   // see sizeRows()
+  const STORAGE_KEY = 'cspp-display-top';
+
+  const IDLE_MS = 3000;        // picker fades after the mouse is still this long
+
+  const SCROLL_PX_PER_SEC = 28;
+  const SCROLL_PAUSE_MS = 4000;    // at the top and at the bottom
+  const MANUAL_HOLD_MS = 10000;    // after someone scrolls by hand
 
   const SOCIETY_URL = 'https://societies.tudublin.ie/societies/cscitycampus';
 
@@ -36,6 +47,13 @@
   const statRuns = document.getElementById('stat-runs');
   const statTop = document.getElementById('stat-top');
 
+  const topCountEl = document.getElementById('top-count');
+  const topPicker = document.getElementById('top-picker');
+  const topButtons = Array.from(topPicker.querySelectorAll('button[data-top]'));
+  const topInput = document.getElementById('top-input');
+
+  const params = new URLSearchParams(window.location.search);
+
   /* --- QR codes -------------------------------------------------- */
 
   /* The game URL defaults to whatever origin this page was served from, so
@@ -49,7 +67,7 @@
        ?url=https://flappy.example.com
 
      Only http(s) is accepted; the server rejects anything else anyway. */
-  const override = new URLSearchParams(window.location.search).get('url');
+  const override = params.get('url');
   let gameUrl = window.location.origin + '/';
 
   if (override) {
@@ -82,27 +100,137 @@
     warningEl.classList.remove('hidden');
   }
 
+  /* --- How many players to show ---------------------------------- */
+
+  /** A whole number from 1 to MAX_TOP, or null if the value is not one. */
+  function parseTop(value) {
+    const n = Number.parseInt(value, 10);
+    if (!Number.isInteger(n) || n < 1) return null;
+    return Math.min(n, MAX_TOP);
+  }
+
+  function readStoredTop() {
+    try {
+      return parseTop(localStorage.getItem(STORAGE_KEY));
+    } catch {
+      return null;   // storage blocked (private window, kiosk mode)
+    }
+  }
+
+  // ?top=20 in the address wins, so a bookmark always opens the same way;
+  // then whatever this browser last showed; then the default.
+  let topN = parseTop(params.get('top')) || readStoredTop() || DEFAULT_TOP;
+
+  function renderTopPicker() {
+    topCountEl.textContent = topN;
+
+    let isPreset = false;
+    topButtons.forEach(function (btn) {
+      const on = Number(btn.dataset.top) === topN;
+      btn.setAttribute('aria-pressed', String(on));
+      if (on) isPreset = true;
+    });
+
+    // A typed number that is not one of the buttons stays in the box
+    topInput.value = isPreset ? '' : topN;
+    topInput.classList.toggle('active', !isPreset);
+  }
+
+  function setTop(n) {
+    const changed = n !== topN;
+    topN = n;
+    renderTopPicker();
+    if (!changed) return;
+
+    try {
+      localStorage.setItem(STORAGE_KEY, String(n));
+    } catch {
+      // Not remembered across visits; the address below still is.
+    }
+
+    // Keep the address in step so a reload shows the same thing.
+    const url = new URL(window.location.href);
+    url.searchParams.set('top', n);
+    history.replaceState(null, '', url);
+
+    restartScroll();   // show the new list from the top
+    refresh();
+  }
+
+  function applyTyped() {
+    const n = parseTop(topInput.value);
+    if (n) setTop(n);
+    else renderTopPicker();   // empty or junk: put the box back as it was
+  }
+
+  topButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setTop(Number(btn.dataset.top));
+    });
+  });
+
+  topPicker.addEventListener('submit', function (e) {
+    e.preventDefault();
+    applyTyped();
+    topInput.blur();   // lets the picker fade out again
+  });
+
+  topInput.addEventListener('change', applyTyped);
+
+  renderTopPicker();
+
+  /* --- Picker visibility ----------------------------------------- */
+
+  /* The picker only shows while the mouse is moving (or while it has
+     focus), so the public screen is not cluttered with controls. */
+  let idleTimer = 0;
+
+  function wake() {
+    document.body.classList.add('awake');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      document.body.classList.remove('awake');
+    }, IDLE_MS);
+  }
+
+  ['mousemove', 'pointerdown', 'keydown', 'touchstart'].forEach(function (type) {
+    document.addEventListener(type, wake, { passive: true });
+  });
+
+  wake();   // show it briefly on load, so it is clear it exists
+
   /* --- Rendering ------------------------------------------------- */
 
   // Remembers the last rendered scores so new or improved entries can be
   // highlighted rather than silently replaced.
   let previous = new Map();
 
-  function renderLeaderboard(entries) {
-    listEl.textContent = '';
+  /* Rows are sized for at least MIN_SIZED_ROWS, so three players look like
+     the top of a list rather than three giant bars — but never for more
+     rows than are actually there, so a top 100 with twelve players still
+     fills the board. */
+  function sizeRows(count) {
+    const rows = Math.max(Math.min(topN, MIN_SIZED_ROWS), count);
+    listEl.style.setProperty('--rows', rows);
+  }
 
+  /** Swap the list contents without losing the auto-scroll position. */
+  function replaceRows(items) {
+    const keep = listEl.scrollTop;
+    listEl.replaceChildren(...items);
+    listEl.scrollTop = keep;
+  }
+
+  function renderLeaderboard(entries) {
     if (!entries.length) {
-      const li = document.createElement('li');
-      li.className = 'status';
-      li.textContent = 'No scores yet — be the first!';
-      listEl.appendChild(li);
+      setStatus('No scores yet — be the first!');
       previous = new Map();
       return;
     }
 
     const next = new Map();
 
-    entries.forEach(function (entry, index) {
+    const items = entries.map(function (entry, index) {
       const li = document.createElement('li');
 
       if (index === 0) li.classList.add('top1');
@@ -131,18 +259,19 @@
       score.textContent = entry.best_score;
 
       li.append(rank, name, score);
-      listEl.appendChild(li);
+      return li;
     });
 
+    sizeRows(entries.length);
+    replaceRows(items);
     previous = next;
   }
 
   function setStatus(message) {
-    listEl.textContent = '';
     const li = document.createElement('li');
     li.className = 'status';
     li.textContent = message;
-    listEl.appendChild(li);
+    replaceRows([li]);
   }
 
   function renderStats(stats) {
@@ -151,17 +280,93 @@
     statTop.textContent = stats.top_score;
   }
 
+  /* --- Auto-scroll ----------------------------------------------- */
+
+  /* When more rows are asked for than fit at a readable size, the list
+     scrolls itself: a pause at the top, a slow glide down, a pause at the
+     bottom, a quick glide back up. Nobody scrolls a screen at a stand.
+
+     The position is tracked here rather than read back from scrollTop,
+     which some browsers round to whole pixels — at this speed that would
+     stall the glide entirely. */
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  let scrollPos = 0;
+  let scrollPhase = 'top';     // top (pause) -> down -> bottom (pause) -> up
+  let phaseStart = performance.now();
+  let lastFrame = performance.now();
+  let manualUntil = 0;
+
+  function holdForHand() {
+    manualUntil = performance.now() + MANUAL_HOLD_MS;
+  }
+
+  function restartScroll() {
+    scrollPos = 0;
+    scrollPhase = 'top';
+    phaseStart = performance.now();
+    listEl.scrollTop = 0;
+  }
+
+  listEl.addEventListener('wheel', holdForHand, { passive: true });
+  listEl.addEventListener('touchstart', holdForHand, { passive: true });
+
+  function scrollFrame(now) {
+    // Capped, so a tab that was hidden for minutes does not jump.
+    const step = Math.min(now - lastFrame, 100) / 1000 * SCROLL_PX_PER_SEC;
+    lastFrame = now;
+
+    const max = listEl.scrollHeight - listEl.clientHeight;
+    const overflowing = max > 1;
+    listEl.classList.toggle('scrolling', overflowing);
+
+    if (!overflowing) {
+      scrollPos = 0;
+      scrollPhase = 'top';
+      phaseStart = now;
+    } else if (reduceMotion.matches || now < manualUntil) {
+      // Leave the list wherever a person put it.
+      scrollPos = listEl.scrollTop;
+      phaseStart = now;
+    } else {
+      if (scrollPhase === 'down') {
+        scrollPos = Math.min(scrollPos + step, max);
+        if (scrollPos >= max) { scrollPhase = 'bottom'; phaseStart = now; }
+      } else if (scrollPhase === 'up') {
+        scrollPos = Math.max(scrollPos - step * 8, 0);
+        if (scrollPos <= 0) { scrollPhase = 'top'; phaseStart = now; }
+      } else if (now - phaseStart >= SCROLL_PAUSE_MS) {
+        scrollPhase = scrollPhase === 'top' ? 'down' : 'up';
+      }
+
+      scrollPos = Math.min(scrollPos, max);   // the list may have shrunk
+      listEl.scrollTop = scrollPos;
+    }
+
+    listEl.classList.toggle('at-top', scrollPos <= 1);
+    listEl.classList.toggle('at-bottom', scrollPos >= max - 1);
+
+    requestAnimationFrame(scrollFrame);
+  }
+
+  requestAnimationFrame(scrollFrame);
+
   /* --- Polling --------------------------------------------------- */
 
   let failures = 0;
   let firstLoad = true;
+  let requestSeq = 0;
 
   async function refresh() {
+    // Picking a new number mid-poll starts another request; only the
+    // newest one may draw, or a slow reply could put the old count back.
+    const seq = ++requestSeq;
+
     try {
       // Both in flight together: two sequential round trips would let the
       // board and the totals disagree for a moment.
       const [boardRes, statsRes] = await Promise.all([
-        fetch('/api/leaderboard?limit=' + TOP_N, { cache: 'no-store' }),
+        fetch('/api/leaderboard?limit=' + topN, { cache: 'no-store' }),
         fetch('/api/stats', { cache: 'no-store' })
       ]);
 
@@ -169,13 +374,18 @@
 
       const [board, stats] = await Promise.all([boardRes.json(), statsRes.json()]);
 
+      if (seq !== requestSeq) return;
+
       renderLeaderboard(board);
       renderStats(stats);
 
       failures = 0;
       firstLoad = false;
       liveEl.classList.remove('stale');
+      liveEl.title = 'Updating automatically';
     } catch (err) {
+      if (seq !== requestSeq) return;
+
       failures++;
       console.error('Display refresh failed:', err);
 

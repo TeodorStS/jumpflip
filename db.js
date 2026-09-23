@@ -177,4 +177,53 @@ function getStats() {
   return selectStats.get();
 }
 
-module.exports = { db, submitScore, getLeaderboard, getStats, DB_PATH };
+/* ---------------------------------------------------------------
+   Dev page queries
+
+   These return every student number, so they are kept apart from the
+   public functions above and used only by the /dev routes.
+   --------------------------------------------------------------- */
+
+// Same order as the public leaderboard, so rank 1 here is rank 1 there.
+const selectAllPlayers = db.prepare(`
+  SELECT p.student_number,
+         p.name,
+         p.best_score,
+         COUNT(r.id) AS run_count
+    FROM players p
+    LEFT JOIN runs r ON r.student_number = p.student_number
+   GROUP BY p.student_number
+   ORDER BY p.best_score DESC, p.updated_at ASC
+`);
+
+// Worked out by SQLite, so it uses the same clock that stamped played_at.
+const selectSecondsSinceLastRun = db.prepare(`
+  SELECT CAST(strftime('%s', 'now') - strftime('%s', MAX(played_at)) AS INTEGER) AS secs
+    FROM runs
+`);
+
+/**
+ * Every player with their student number and number of games, best first.
+ */
+function getAllPlayers() {
+  return selectAllPlayers.all();
+}
+
+/**
+ * Seconds since the last game was recorded, or null if none have been.
+ * @returns {number|null}
+ */
+function getSecondsSinceLastRun() {
+  return selectSecondsSinceLastRun.get().secs;
+}
+
+module.exports = {
+  db,
+  submitScore,
+  getLeaderboard,
+  getStats,
+  DB_PATH,
+  // Dev page only — these include student numbers
+  getAllPlayers,
+  getSecondsSinceLastRun
+};

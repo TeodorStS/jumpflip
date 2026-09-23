@@ -6,9 +6,13 @@ db/*.sqlite
 flappy-backup.sqlite
 flappy-backup.sqlite-shm
 flappy-backup.sqlite-wal
-players.csv
 db/*.sqlite-shm
 db/*.sqlite-wal
 
+# Exports contain student numbers — never commit them.
+players.csv
+cspp-flappy-players-*.csv
+
 npm-debug.log*
 .DS_Store
+.env

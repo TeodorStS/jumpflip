@@ -177,24 +177,115 @@ body {
   .live { animation: none; }
 }
 
-/* Rows share the available height evenly rather than scrolling, so a row
-   is never cut in half at the bottom edge — a clipped name reads as a bug
-   on a screen nobody is going to scroll. */
+/* --- How-many picker ------------------------------------------- */
+
+/* Title centred, picker at the right-hand end. A grid rather than absolute
+   positioning, so the two can never overlap on a narrower screen. */
+.board-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.board-head h2 { grid-column: 2; }
+
+.top-picker {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .4s;
+}
+
+/* display.js sets .awake while the mouse moves */
+body.awake .top-picker,
+.top-picker:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ...and hides the pointer when it stops, like a video player */
+body:not(.awake) { cursor: none; }
+
+.top-picker button,
+.top-picker input {
+  font: inherit;
+  font-size: clamp(11px, 1vw, 14px);
+  color: var(--text);
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+
+.top-picker button { cursor: pointer; }
+.top-picker button:hover { border-color: var(--cs-gold); }
+
+.top-picker button[aria-pressed="true"] {
+  background: var(--cs-gold);
+  border-color: var(--cs-gold);
+  color: var(--ink);
+  font-weight: bold;
+}
+
+.top-picker input { width: 5.5em; text-align: center; }
+.top-picker input::placeholder { color: var(--text-dim); }
+.top-picker input:focus { outline: none; border-color: var(--cs-gold); }
+
+/* A typed number that is not one of the buttons */
+.top-picker input.active { border-color: var(--cs-gold); color: var(--cs-gold); }
+
+/* Rows share the list height evenly and the text scales with the row, so
+   any number from 1 to 100 fills the board without a row being cut in
+   half at the bottom edge — a clipped name reads as a bug on a screen
+   nobody is going to scroll.
+
+   Rows stop shrinking at a readable height. Past that the list scrolls
+   itself (see display.js).
+
+   display.js sets --rows. The list is a size container, so each row can
+   work out its share of the list's height in cqh units. */
 .leaderboard {
+  --rows: 10;
+  --gap: clamp(2px, calc(80px / var(--rows)), 8px);
+  --row-min: clamp(22px, 2.6vh, 36px);
+
+  container-type: size;
   list-style: none;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: clamp(3px, .6vh, 8px);
+  gap: var(--gap);
   margin-top: 4px;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
+.leaderboard::-webkit-scrollbar { display: none; }
+
+/* While it scrolls, fade whichever edge has more rows beyond it, so rows
+   glide in and out — but never dim the leader while it sits at the top. */
+.leaderboard.scrolling {
+  --fade-top: 4%;
+  --fade-bottom: 4%;
+  -webkit-mask-image: linear-gradient(transparent, #000 var(--fade-top),
+                                      #000 calc(100% - var(--fade-bottom)), transparent);
+          mask-image: linear-gradient(transparent, #000 var(--fade-top),
+                                      #000 calc(100% - var(--fade-bottom)), transparent);
+}
+
+.leaderboard.at-top    { --fade-top: 0%; }
+.leaderboard.at-bottom { --fade-bottom: 0%; }
+
 .leaderboard li {
-  /* Each row takes an equal share of the list height and shrinks to fit,
-     so ten rows always fit whatever the screen size. */
-  flex: 1 1 0;
+  --row: max(var(--row-min), calc((100cqh - (var(--rows) - 1) * var(--gap)) / var(--rows)));
+
+  flex: 0 0 var(--row);
   min-height: 0;
   display: flex;
   align-items: center;
@@ -202,7 +293,7 @@ body {
   padding: 0 clamp(10px, 1.2vw, 18px);
   border-radius: 10px;
   background: rgba(255, 255, 255, .06);
-  font-size: clamp(14px, 1.7vw, 28px);
+  font-size: clamp(12px, min(1.7vw, calc(var(--row) * .75)), 28px);
   overflow: hidden;
 }
 
@@ -254,6 +345,9 @@ body {
   color: var(--text-dim);
   background: none !important;
 }
+
+/* "Loading…" and "No scores yet" sit in the middle of the board */
+.leaderboard li.status { flex: 1 1 auto; }
 
 /* --- Stats ----------------------------------------------------- */
 
@@ -319,4 +413,12 @@ body {
 
   .card-play, .card-join { flex: 1 1 0; }
   .card-join .qr { width: clamp(100px, 22vw, 160px); }
+
+  /* The page scrolls here, so give the board real height rather than
+     whatever is left under the QR codes */
+  .leaderboard { min-height: 50vh; }
+
+  /* Not enough width for title and picker side by side */
+  .board-head { grid-template-columns: 1fr; justify-items: center; }
+  .board-head h2, .top-picker { grid-column: 1; justify-self: center; }
 }

@@ -286,6 +286,29 @@ padlock in the address bar.
 
 ---
 
+## Step 6.5 — The dev page
+
+Nothing to set up — it is part of the container. Open:
+
+```
+https://flappy.yourdomain.com/dev
+```
+
+- **Every player with their student number**, best first
+- **Export CSV** — the same list as a spreadsheet, for picking the winners
+- **Live monitor** — players, games, top score, time since the last game
+  and server uptime, refreshing every 5 seconds
+
+A red dot means the page cannot reach the server. Uptime dropping back to a
+few seconds means the server restarted.
+
+> **There is no password.** Anyone who opens `/dev` sees every student
+> number, and the repository is public, so the address is not a secret.
+> Keep the link among the organisers.
+
+**Never put `/dev` on the stand screen.** Use `/display` for the public
+screen — it shows names and scores only.
+
 ## Step 7 — The day of the event
 
 1. **Check the server is up** (do this the morning of, not on arrival):
@@ -304,6 +327,11 @@ padlock in the address bar.
    Press **F11** for fullscreen. That is the whole setup — the QR code on
    screen points at the same server the page came from.
 
+   The board shows the top 10. To show more, move the mouse over the
+   leaderboard and pick **10** or **20**, or type any number up to 100 and
+   press Enter. The screen remembers the choice. If more players are asked
+   for than fit, the list scrolls itself.
+
 3. **Test with your own phone on mobile data, wifi off.** This is the single
    most important check. It is exactly what a student's phone will do, and it
    proves the whole path works from outside your network. Testing from the
@@ -318,7 +346,9 @@ padlock in the address bar.
 
 | What | Command |
 |------|---------|
-| Watch logs live | `docker compose logs -f` |
+| Live monitor (browser) | open `https://flappy.yourdomain.com/dev` |
+| Watch logs live — one line per game | `docker compose logs -f` |
+| CPU and memory | `docker stats cspp-flappy` |
 | Last 50 log lines | `docker compose logs --tail 50` |
 | Restart | `docker compose restart` |
 | Stop | `docker compose down` |
@@ -335,9 +365,15 @@ data intact.
 
 ## Getting the results out
 
-During or after the event:
+The quickest way: open `/dev` and press **Export CSV**. You get every
+player, best first, with their student number.
+
+Or from the server's command line:
 
 ```bash
+# The same CSV as the button
+curl -s http://localhost:3000/dev/players.csv > players.csv
+
 # Summary
 docker compose exec flappy npm run players -- --stats
 

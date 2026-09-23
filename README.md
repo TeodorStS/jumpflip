@@ -89,7 +89,10 @@ public/
   mascot.png   The CS++ mascot sprite
   display.html Stand display screen (QR codes + live leaderboard)
   display.css  Display screen styling
-  display.js   Display screen polling and QR wiring
+  display.js   Display screen polling, QR wiring, how-many picker
+  dev.html     Dev page: every player with student numbers, CSV, monitor
+  dev.css      Dev page styling
+  dev.js       Dev page polling
 ```
 
 ## Society sign-up placement
@@ -142,9 +145,14 @@ the server is live.
 
 ### From the browser
 
-`http://localhost:3000/api/leaderboard?limit=100` returns the same data as
-JSON. Handy if you want the standings on a second screen without stopping
-anything.
+`http://localhost:3000/dev` lists every player with their student number,
+best first, and has an **Export CSV** button for picking the winners. It
+refreshes itself every 5 seconds and doubles as a live monitor: players,
+games, top score, time since the last game and server uptime.
+
+**It has no password** — anyone who can reach the server can open it and see
+every student number. Keep the link among the organisers and never put it on
+the stand screen.
 
 ### With a GUI
 
@@ -168,8 +176,15 @@ http://<machine-ip>:3000/display
 ```
 
 It shows a QR code to the game, a QR code to society sign-up, the live
-top ten, and running totals. It refreshes itself every 5 seconds, so it can
-be left alone all day.
+leaderboard, and running totals. It refreshes itself every 5 seconds, so it
+can be left alone all day.
+
+**Choosing how many players to show.** The board shows the top 10 by
+default. Move the mouse and a picker appears next to the title: **10**,
+**20**, or type any number up to 100 and press Enter. It fades out again
+when the mouse is still. The choice is remembered by that browser, and
+`?top=20` in the address sets it directly. Rows shrink to fit as many as
+possible; past a readable size, the list scrolls itself slowly instead.
 
 **Open it at the address players should scan, not `localhost`.** The QR code
 encodes whatever address the page itself was opened at, so opening it at
@@ -241,6 +256,26 @@ vector.
 ### `GET /api/health`
 
 Returns `{"ok": true}`.
+
+### `GET /dev/api/players`
+
+Every player **with student number**, best first, plus the event totals and
+monitor figures the dev page shows. No password.
+
+```json
+{
+  "players": [{ "student_number": "C00035654", "name": "Jane Doe", "best_score": 12, "run_count": 3 }],
+  "stats": { "players": 42, "runs": 118, "top_score": 31, "avg_run_score": 7.4 },
+  "last_game_secs_ago": 14,
+  "uptime_secs": 5400
+}
+```
+
+### `GET /dev/players.csv`
+
+The same list as a CSV download: `rank,name,student_number,best_score,games`.
+Names that start with `=`, `+`, `-` or `@` are prefixed with `'` so a
+spreadsheet cannot run them as formulas.
 
 ## Validation
 
