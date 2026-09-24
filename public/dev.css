@@ -141,7 +141,13 @@ button:focus-visible,
   color: var(--text-dim);
 }
 
-.stat-value { font-size: 20px; font-weight: bold; white-space: nowrap; }
+.stat-value {
+  font-size: 20px;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .note {
   font-size: 12px;

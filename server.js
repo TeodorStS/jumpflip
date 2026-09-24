@@ -13,6 +13,7 @@
 
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -48,8 +49,64 @@ const MAX_QR_LENGTH = 512;   // generous for a LAN URL, bounded for safety
 // Cap the body size — these payloads are tiny, so anything larger is junk.
 app.use(express.json({ limit: '4kb' }));
 
-// Serve the game itself.
-app.use(express.static(path.join(__dirname, 'public')));
+/* ---------------------------------------------------------------
+   Pages, with cache-busting
+
+   Behind nginx (deploy/nginx.conf) browsers keep .js and .css for an
+   hour, but always re-check the HTML. After a deploy that pairs the new
+   page with the old script and stylesheet, and the page breaks — rows
+   missing, buttons dead. So every page is sent with its .css/.js links
+   tagged ?v=<hash of the file>: a changed file gets a new address the
+   browser has never cached, and an unchanged one keeps its cache.
+
+   Registered before the static middleware, which would otherwise send
+   the raw files.
+   --------------------------------------------------------------- */
+
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const assetVersions = new Map();   // file -> { mtimeMs, version }
+
+/** Short content hash of a file in public/, recomputed when it changes. */
+function assetVersion(file) {
+  const full = path.join(PUBLIC_DIR, file);
+  const { mtimeMs } = fs.statSync(full);
+  const cached = assetVersions.get(file);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.version;
+
+  const version = crypto.createHash('sha1').update(fs.readFileSync(full)).digest('hex').slice(0, 10);
+  assetVersions.set(file, { mtimeMs, version });
+  return version;
+}
+
+/** Send an HTML page from public/ with its own .css/.js links versioned. */
+function sendPage(res, file) {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, file), 'utf8').replace(
+    /(href|src)="(\/?)([\w.-]+\.(?:css|js))"/g,
+    (link, attr, slash, name) => {
+      try {
+        return `${attr}="${slash}${name}?v=${assetVersion(name)}"`;
+      } catch {
+        return link;   // not a file of ours; leave it alone
+      }
+    }
+  );
+
+  // Always re-check the page itself. /dev sets its stricter no-store first.
+  if (!res.get('Cache-Control')) res.set('Cache-Control', 'no-cache');
+  return res.type('html').send(html);
+}
+
+app.get(['/', '/index.html'], (req, res) => sendPage(res, 'index.html'));
+
+/* /display is the friendly alias for the stand screen, short enough to
+   type from memory onto a venue laptop. */
+app.get(['/display', '/display.html'], (req, res) => sendPage(res, 'display.html'));
+
+// The dev page lives at /dev, behind the password.
+app.get('/dev.html', (req, res) => res.redirect('/dev'));
+
+// Everything else in public/: scripts, stylesheets, images.
+app.use(express.static(PUBLIC_DIR));
 
 /* ---------------------------------------------------------------
    Input sanitization helpers
@@ -130,13 +187,6 @@ function validateScorePayload(body) {
 /* ---------------------------------------------------------------
    Routes
    --------------------------------------------------------------- */
-
-/* Friendly alias for the stand display, so it can be typed from memory
-   onto a venue laptop. display.html is also served directly by the static
-   middleware above. */
-app.get('/display', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'display.html'));
-});
 
 /**
  * POST /api/score
@@ -320,9 +370,7 @@ app.use('/dev', (req, res, next) => {
   next();
 });
 
-app.get('/dev', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dev.html'));
-});
+app.get('/dev', (req, res) => sendPage(res, 'dev.html'));
 
 /**
  * GET /dev/api/players

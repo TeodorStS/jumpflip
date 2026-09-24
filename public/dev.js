@@ -73,12 +73,13 @@
     return Date.now() + clockOffset;
   }
 
-  /** 75 -> "1m 15s", 7300 -> "2h 1m" */
+  /** 45 -> "45s", 75 -> "1m", 7300 -> "2h 1m" — seconds only while they matter */
   function duration(secs) {
+    if (!Number.isFinite(secs)) return '–';   // missing data, never "NaNd NaNh"
     secs = Math.max(0, Math.floor(secs));
     if (secs < 60) return secs + 's';
     const mins = Math.floor(secs / 60);
-    if (mins < 60) return mins + 'm ' + (secs % 60) + 's';
+    if (mins < 60) return mins + 'm';
     const hours = Math.floor(mins / 60);
     if (hours < 24) return hours + 'h ' + (mins % 60) + 'm';
     return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
