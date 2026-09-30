@@ -51,7 +51,7 @@ COPY --from=deps /app/node_modules ./node_modules
 # Application code. .dockerignore keeps node_modules, the local db/ and the
 # scratch files out of this.
 COPY package.json ./
-COPY server.js db.js ./
+COPY server.js db.js runs.js ./
 COPY public ./public
 COPY scripts ./scripts
 

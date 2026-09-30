@@ -8,7 +8,7 @@
      3. Game state
      4. BIRD RENDERING     <- swap this for the mascot sprite
      5. Pipes
-     6. Update / collision
+     6. Update (the rules themselves are in sim.js)
      7. Draw
      8. Loop, input, UI wiring
    =============================================================== */
@@ -18,49 +18,32 @@
 
   /* ---------------------------------------------------------------
      1. TUNING CONSTANTS
-     All physics/difficulty knobs live here. Everything is expressed
-     in "design units" against a fixed virtual playfield (see below),
-     so the feel is identical on a phone and on a desktop monitor
-     regardless of the actual pixel size of the canvas.
+     The RULES — physics, difficulty, pipes, collisions — live in
+     sim.js, shared with the server, which replays every run to check
+     its score. Tune the game there. This file only decides how it
+     LOOKS. Everything is in "design units" on a fixed virtual
+     playfield, so the feel is identical on a phone and a monitor.
      --------------------------------------------------------------- */
 
-  // Virtual playfield. All game logic runs in this coordinate space and
-  // is scaled to the real canvas at draw time. Portrait, phone-shaped.
-  const VIEW_W = 360;
-  const VIEW_H = 640;
-
-  // --- Physics ---
-  const GRAVITY        = 1500;   // downward accel, units/sec^2
-  const FLAP_STRENGTH  = 430;    // upward velocity applied on a flap, units/sec
-  const MAX_FALL_SPEED = 800;    // terminal velocity so a long drop stays survivable
+  const Sim = window.FlappySim;
+  const {
+    VIEW_W, VIEW_H, TICK_RATE, MAX_FALL_SPEED,
+    BIRD_X, BIRD_RADIUS, PIPE_GAP, PIPE_WIDTH, PIPE_SPEED, GROUND_HEIGHT, GROUND_Y
+  } = Sim;
 
   // --- Bird ---
-  const BIRD_X          = 90;    // fixed horizontal position of the bird
-  const BIRD_RADIUS     = 16;    // collision radius
   // Drawn noticeably larger than the collision circle: the mascot has a lot
   // of internal detail (face, headphones, CS++ jumper) that is lost at a
   // small size, and a generous sprite over a tight hitbox plays fairer than
   // the reverse. Raise BIRD_RADIUS instead if you want the game harder.
   const BIRD_DRAW_SCALE = 1.9;   // sprite size relative to the collision circle
-  // Starting height, as a fraction of the playfield. Low enough that the
-  // mascot rests below the start-screen panels instead of poking out
-  // between them, while still leaving room to fall when play begins.
-  const BIRD_START_Y    = 0.62;
   // Tilt limits are deliberately gentler than classic Flappy Bird: the
   // mascot is an upright character with a face, so a steep nose-dive reads
   // as "upside down" rather than "falling".
   const BIRD_MAX_TILT  = 0.6;    // radians, nose-down limit
   const BIRD_MIN_TILT  = -0.35;  // radians, nose-up limit
 
-  // --- Pipes ---
-  const PIPE_GAP       = 160;    // vertical opening the bird flies through
-  const PIPE_WIDTH     = 60;
-  const PIPE_SPACING   = 210;    // horizontal distance between consecutive pipes
-  const PIPE_SPEED     = 150;    // scroll speed, units/sec
-  const PIPE_MARGIN    = 70;     // min distance from gap edge to ceiling/ground
-
   // --- World ---
-  const GROUND_HEIGHT  = 90;     // height of the ground strip at the bottom
   const GROUND_SCROLL  = PIPE_SPEED; // keep ground and pipes visually in sync
 
   /* Repeating periods of the scrolling background layers, in design units.
@@ -221,36 +204,32 @@
 
   const STATE = { READY: 'ready', PLAYING: 'playing', OVER: 'over' };
 
-  const GROUND_Y = VIEW_H - GROUND_HEIGHT; // y of the top of the ground
-
   let state = STATE.READY;
-  let score = 0;
   let groundOffset = 0;   // for the scrolling ground texture
   let lastTime = 0;
 
-  const bird = {
-    y: VIEW_H * 0.42,
-    velocity: 0,
-    tilt: 0
-  };
+  // The run itself: bird, pipes, score. Only Sim.step() changes it.
+  let game = Sim.create(0);
 
-  let pipes = [];
+  let tilt = 0;           // bird rotation — looks only, so not in the sim
+  let accumulator = 0;    // real time not yet turned into sim ticks
+  let pendingFlap = false;
+  let flapTicks = [];     // the tick of every flap, sent to the server to replay
 
-  function resetGame() {
-    score = 0;
-    bird.y = VIEW_H * BIRD_START_Y;
-    bird.velocity = 0;
-    bird.tilt = 0;
+  /* The server's ticket for this run: { game_id, seed }. It picks the seed,
+     so pipe layouts can't be chosen, and it only accepts a score it can
+     replay from this seed and flapTicks. null means the run is offline
+     practice and won't be saved. */
+  let ticket = null;
+
+  function resetGame(seed) {
+    game = Sim.create(seed);
+    tilt = 0;
+    accumulator = 0;
+    pendingFlap = false;
+    flapTicks = [];
     groundOffset = 0;
-    pipes = [];
-
-    // Seed enough pipes to fill the screen to the right of the bird.
-    let x = VIEW_W + 60;
-    const end = x + PIPE_SPACING * 3;
-    while (x < end) {
-      pipes.push(makePipe(x));
-      x += PIPE_SPACING;
-    }
+    pipeLooks.clear();
   }
 
   /* ---------------------------------------------------------------
@@ -284,8 +263,8 @@
 
   function drawBird() {
     ctx.save();
-    ctx.translate(BIRD_X, bird.y);
-    ctx.rotate(bird.tilt);
+    ctx.translate(BIRD_X, game.y);
+    ctx.rotate(tilt);
 
     if (spriteReady) {
       // The mascot is drawn larger than the collision circle: the artwork
@@ -346,23 +325,30 @@
     'cpu', 'gpu', 'hdd', 'psu'
   ];
 
-  // A pipe is defined by its left edge x and the y of the TOP of the gap.
-  function makePipe(x) {
-    const minGapY = PIPE_MARGIN;
-    const maxGapY = GROUND_Y - PIPE_GAP - PIPE_MARGIN;
-    const gapY = minGapY + Math.random() * (maxGapY - minGapY);
+  /* Where a pipe is and where its gap sits come from the sim. What it
+     looks like is decided here, once per pipe (keyed by its number), and is
+     free to be random: the server never needs to know. */
+  const pipeLooks = new Map();
 
-    return {
-      x: x,
-      gapY: gapY,
-      type: PIPE_TYPES[Math.floor(Math.random() * PIPE_TYPES.length)],
-      // Fixed at creation and never changed. Interior detail (rack LEDs,
-      // book spines) is hashed from THIS, not from the pipe's x — x moves
-      // every frame, so hashing it re-rolls the detail every frame and the
-      // obstacle visibly flickers.
-      seed: Math.floor(Math.random() * 100000),
-      scored: false   // set once the bird passes it, so each pipe counts once
-    };
+  function pipeLook(index) {
+    let look = pipeLooks.get(index);
+    if (!look) {
+      look = {
+        type: PIPE_TYPES[Math.floor(Math.random() * PIPE_TYPES.length)],
+        // Fixed at creation and never changed. Interior detail (rack LEDs,
+        // book spines) is hashed from THIS, not from the pipe's x — x moves
+        // every frame, so hashing it re-rolls the detail every frame and the
+        // obstacle visibly flickers.
+        seed: Math.floor(Math.random() * 100000)
+      };
+      pipeLooks.set(index, look);
+
+      // Forget pipes that have been recycled.
+      for (const old of pipeLooks.keys()) {
+        if (old < game.pipes[0].index) pipeLooks.delete(old);
+      }
+    }
+    return look;
   }
 
   /* --- Obstacle rendering ---------------------------------------
@@ -377,8 +363,9 @@
     const lowerY = p.gapY + PIPE_GAP;
     const lowerH = GROUND_Y - lowerY;
 
-    drawComponent(p.type, p.x, 0, PIPE_WIDTH, upperH, true, p.seed);
-    drawComponent(p.type, p.x, lowerY, PIPE_WIDTH, lowerH, false, p.seed);
+    const look = pipeLook(p.index);
+    drawComponent(look.type, p.x, 0, PIPE_WIDTH, upperH, true, look.seed);
+    drawComponent(look.type, p.x, lowerY, PIPE_WIDTH, lowerH, false, look.seed);
   }
 
   /* --- Offscreen obstacle cache ---------------------------------
@@ -822,12 +809,15 @@
   }
 
   /* ---------------------------------------------------------------
-     6. Update & collision
+     6. Update
+     The physics runs in fixed ticks (sim.js), never in frame-sized
+     steps, so the server can replay the run exactly. A flap is
+     applied on the next tick and that tick's number is recorded.
      --------------------------------------------------------------- */
 
   function flap() {
     if (state !== STATE.PLAYING) return;
-    bird.velocity = -FLAP_STRENGTH;
+    pendingFlap = true;
   }
 
   function update(dt) {
@@ -841,78 +831,29 @@
 
     if (state !== STATE.PLAYING) return;
 
-    // --- Bird physics ---
-    bird.velocity = Math.min(bird.velocity + GRAVITY * dt, MAX_FALL_SPEED);
-    bird.y += bird.velocity * dt;
+    // Turn real time into whole ticks. dt is already capped by frame(), so
+    // the game can only ever run slower than real time, never faster —
+    // which is exactly what the server checks.
+    accumulator += dt;
+    while (accumulator >= 1 / TICK_RATE) {
+      accumulator -= 1 / TICK_RATE;
 
-    // Tilt maps vertical speed to rotation: nose up when rising, down when falling.
-    const targetTilt = bird.velocity < 0
-      ? BIRD_MIN_TILT
-      : Math.min(BIRD_MAX_TILT, bird.velocity / MAX_FALL_SPEED * BIRD_MAX_TILT);
-    bird.tilt += (targetTilt - bird.tilt) * Math.min(1, dt * 10);
+      if (pendingFlap) flapTicks.push(game.tick);
+      Sim.step(game, pendingFlap);
+      pendingFlap = false;
 
-    // --- Pipes: scroll and score ---
-    for (const p of pipes) {
-      p.x -= PIPE_SPEED * dt;
-
-      // Score the moment the pipe's right edge clears the bird.
-      if (!p.scored && p.x + PIPE_WIDTH < BIRD_X) {
-        p.scored = true;
-        score++;
+      if (game.over) {
+        endGame();
+        return;
       }
     }
 
-    // Recycle: drop pipes that have left the screen and append a new one at
-    // the end, keeping spacing constant. This is what makes the field endless.
-    while (pipes.length && pipes[0].x + PIPE_WIDTH < -cullMargin()) {
-      pipes.shift();
-      const last = pipes[pipes.length - 1];
-      pipes.push(makePipe(last.x + PIPE_SPACING));
-    }
-
-    // --- Collisions ---
-    if (hitsGroundOrCeiling() || hitsAnyPipe()) {
-      endGame();
-    }
-  }
-
-  // How far off-screen-left a pipe must be before it is recycled. With the
-  // "cover" scaling a wide screen can reveal area left of x=0, so allow a
-  // margin rather than culling something still visible.
-  function cullMargin() {
-    return Math.max(0, -offsetX / scale) + 20;
-  }
-
-  function hitsGroundOrCeiling() {
-    // The top of the playfield is solid so the bird can't climb out of the
-    // level and skip pipes.
-    if (bird.y - BIRD_RADIUS <= 0) return true;
-    if (bird.y + BIRD_RADIUS >= GROUND_Y) return true;
-    return false;
-  }
-
-  function hitsAnyPipe() {
-    for (const p of pipes) {
-      // Cheap horizontal reject first.
-      if (BIRD_X + BIRD_RADIUS < p.x || BIRD_X - BIRD_RADIUS > p.x + PIPE_WIDTH) continue;
-
-      // Circle-vs-rect against the upper and lower pipe bodies.
-      if (circleHitsRect(BIRD_X, bird.y, BIRD_RADIUS, p.x, 0, PIPE_WIDTH, p.gapY)) return true;
-
-      const lowerY = p.gapY + PIPE_GAP;
-      if (circleHitsRect(BIRD_X, bird.y, BIRD_RADIUS, p.x, lowerY, PIPE_WIDTH, GROUND_Y - lowerY)) return true;
-    }
-    return false;
-  }
-
-  // Standard circle/AABB test: clamp the circle centre to the rect, then
-  // compare that distance against the radius.
-  function circleHitsRect(cx, cy, r, rx, ry, rw, rh) {
-    const nearestX = Math.max(rx, Math.min(cx, rx + rw));
-    const nearestY = Math.max(ry, Math.min(cy, ry + rh));
-    const dx = cx - nearestX;
-    const dy = cy - nearestY;
-    return dx * dx + dy * dy < r * r;
+    // Tilt maps vertical speed to rotation: nose up when rising, down when
+    // falling. Looks only, so it runs per frame rather than per tick.
+    const targetTilt = game.velocity < 0
+      ? BIRD_MIN_TILT
+      : Math.min(BIRD_MAX_TILT, game.velocity / MAX_FALL_SPEED * BIRD_MAX_TILT);
+    tilt += (targetTilt - tilt) * Math.min(1, dt * 10);
   }
 
   /* ---------------------------------------------------------------
@@ -935,7 +876,7 @@
 
     drawCircuitBackground(bleedX, bleedY);
 
-    for (const p of pipes) drawPipe(p);
+    for (const p of game.pipes) drawPipe(p);
 
     drawGround(bleedX, bleedY);
     drawBird();
@@ -1079,7 +1020,7 @@
      circuit traces behind it are busy enough that outlined text alone is
      hard to read at a glance mid-flight. */
   function drawScore() {
-    const text = String(score);
+    const text = String(game.score);
     const y = 52;
 
     ctx.save();
@@ -1149,6 +1090,9 @@
 
   const player = { name: '', student_number: '' };
 
+  // Free play: no details asked for, and nothing about the run is sent.
+  let freePlay = false;
+
   // TU Dublin student number: one letter followed by 8 digits (e.g. C00035654).
   // Mirrors the server's rule in server.js — keep the two in sync.
   const STUDENT_NUMBER_PATTERN = /^[A-Z]\d{8}$/;
@@ -1187,6 +1131,7 @@
 
     player.name = name;
     player.student_number = studentNumber;
+    freePlay = false;
 
     showRegisterError('', null);
 
@@ -1200,19 +1145,55 @@
      Score submission & leaderboard
      --------------------------------------------------------------- */
 
-  /** Submit the finished run. Returns the server's response, or null on failure. */
-  async function submitScore(finalScore) {
+  /* Every run needs a ticket from the server first: { game_id, seed }.
+     The next one is fetched while the current run is being played, so
+     Run Again never waits on the network. */
+
+  const TICKET_WAIT_MS = 3000;   // after this, start anyway as offline practice
+  let nextTicket = null;         // promise of the next run's ticket, or of null
+
+  function fetchTicket() {
+    nextTicket = fetch('/api/game', { method: 'POST' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .catch(function () { return null; });
+  }
+
+  /** The prefetched ticket, or null if the server can't be reached in time. */
+  function takeTicket() {
+    const pending = nextTicket || Promise.resolve(null);
+    fetchTicket();   // start on the one after
+    const giveUp = new Promise(function (resolve) {
+      setTimeout(function () { resolve(null); }, TICKET_WAIT_MS);
+    });
+    return Promise.race([pending, giveUp]);
+  }
+
+  /**
+   * Send the finished run: not a score, but its ticket and every flap.
+   * The server replays those through sim.js and scores the run itself.
+   */
+  async function submitRun(run) {
+    // Gaps between flaps are small numbers, which keeps long runs compact.
+    const flaps = run.flapTicks.map(function (t, i) {
+      return i === 0 ? t : t - run.flapTicks[i - 1];
+    });
+
     const response = await fetch('/api/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        game_id: run.ticket.game_id,
         student_number: player.student_number,
         name: player.name,
-        score: finalScore
+        score: run.score,
+        flaps: flaps
       })
     });
 
-    if (!response.ok) throw new Error('Score submission failed: ' + response.status);
+    if (!response.ok) {
+      const body = await response.json().catch(function () { return {}; });
+      throw new Error(body.error || 'Score submission failed: ' + response.status);
+    }
     return response.json();
   }
 
@@ -1243,7 +1224,8 @@
       const li = document.createElement('li');
 
       // Highlight the current player's own row so they can spot themselves.
-      if (entry.student_number === player.student_number) li.classList.add('is-you');
+      // By name: the public leaderboard carries no student numbers.
+      if (!freePlay && entry.name === player.name) li.classList.add('is-you');
 
       // Zero-based, like an array index — a small in-joke that also keeps
       // the column narrow.
@@ -1277,25 +1259,14 @@
    * Network failures degrade gracefully: the final score is already on
    * screen and Play Again keeps working regardless.
    */
-  async function reportScore(finalScore) {
-    bestLineEl.textContent = '> saving…';
+  async function reportScore(run) {
     bestLineEl.classList.remove('is-new-best');
     setLeaderboardStatus('Loading…');
 
-    try {
-      const result = await submitScore(finalScore);
-
-      // Celebrating a "personal best" of 0 reads as sarcasm, so a first
-      // run of 0 just shows the plain best line instead.
-      if (result.is_new_best && result.best_score > 0) {
-        bestLineEl.textContent = '★ new personal best!';
-        bestLineEl.classList.add('is-new-best');
-      } else {
-        bestLineEl.textContent = 'best = ' + result.best_score;
-      }
-    } catch (err) {
-      console.error(err);
-      bestLineEl.textContent = '!! could not save score (offline?)';
+    if (freePlay) {
+      bestLineEl.textContent = 'free play — not saved';
+    } else {
+      await saveRun(run);
     }
 
     // Load the leaderboard even if the submission failed — it still has
@@ -1308,29 +1279,71 @@
     }
   }
 
+  /** Submit a signed-in run and show the personal best it produced. */
+  async function saveRun(run) {
+    bestLineEl.textContent = '> saving…';
+
+    try {
+      if (!run.ticket) throw new Error('offline practice run');
+      const result = await submitRun(run);
+
+      // Celebrating a "personal best" of 0 reads as sarcasm, so a first
+      // run of 0 just shows the plain best line instead.
+      if (result.is_new_best && result.best_score > 0) {
+        bestLineEl.textContent = '★ new personal best!';
+        bestLineEl.classList.add('is-new-best');
+      } else {
+        bestLineEl.textContent = 'best = ' + result.best_score;
+      }
+    } catch (err) {
+      console.error(err);
+      bestLineEl.textContent = run.ticket
+        ? '!! could not save score (offline?)'
+        : '!! offline — this run was not saved';
+    }
+  }
+
   /* ---------------------------------------------------------------
      Game start / end
      --------------------------------------------------------------- */
 
-  function startGame() {
-    resetGame();
+  let starting = false;
+
+  async function startGame() {
+    // Space and Run Again can both fire while a ticket is on its way.
+    if (starting || state === STATE.PLAYING) return;
+    starting = true;
+    // Free play needs no ticket: it is never submitted.
+    ticket = freePlay ? null : await takeTicket();
+    starting = false;
+
+    // The server's seed decides the pipes. Without a ticket, play offline.
+    resetGame(ticket ? ticket.seed : Math.floor(Math.random() * 4294967296));
     state = STATE.PLAYING;
     registerScreen.classList.add('hidden');
     gameoverScreen.classList.add('hidden');
-    flap(); // an initial hop instead of an instant drop
   }
 
   function endGame() {
     state = STATE.OVER;
-    finalScoreEl.textContent = String(score);
+    finalScoreEl.textContent = String(game.score);
     gameoverScreen.classList.remove('hidden');
 
     // Fire-and-forget: the overlay is already visible, and the best score
     // and leaderboard fill in as the requests resolve.
-    reportScore(score);
+    reportScore({ ticket: ticket, score: game.score, flapTicks: flapTicks });
   }
 
   replayBtn.addEventListener('click', startGame);
+
+  document.getElementById('free-play-btn').addEventListener('click', function () {
+    freePlay = true;
+    player.name = '';
+    player.student_number = '';
+    showRegisterError('', null);
+    if (document.activeElement) document.activeElement.blur();
+    startGame();
+  });
 
   // --- Input: tap / click / spacebar ---
   // Pointer events cover mouse and touch in one path. We listen on the canvas
@@ -1361,7 +1374,8 @@
 
   // --- Boot ---
   resize();
-  resetGame();
+  resetGame(0);
+  fetchTicket();   // ready before the player finishes registering
   inputName.focus();
   requestAnimationFrame(function (t) {
     lastTime = t;

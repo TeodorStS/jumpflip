@@ -4,7 +4,9 @@
    and exposes the score/leaderboard API.
 
    Endpoints:
-     POST /api/score        { student_number, name, score }
+     POST /api/game         a ticket for one run: { game_id, seed }
+     POST /api/score        { game_id, student_number, name, flaps }
+                            — the server replays the run to score it
      GET  /api/leaderboard?limit=10
      GET  /dev              every player with student numbers, monitor,
                             deletion — behind ADMIN_PASSWORD
@@ -18,6 +20,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const QRCode = require('qrcode');
+const { createTicketStore, decodeFlaps, verifyRun } = require('./runs');
 const {
   submitScore, getLeaderboard, getStats, DB_PATH,
   getAllPlayers, getDevStats, getPlayerRuns, deletePlayer, deleteRun
@@ -25,6 +28,13 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+/* Rate limits count requests per client IP. Behind nginx or Docker every
+   request arrives from a private address, with the real IP in
+   X-Forwarded-For, so trust that header — but only from private
+   addresses, so a client connecting directly can't fake its own IP.
+   Override with TRUST_PROXY if the server sits behind something else. */
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal');
 
 /* ---------------------------------------------------------------
    Validation limits
@@ -37,7 +47,6 @@ const MAX_NAME_LENGTH = 60;
 // accepted rather than a fixed set — rejecting a real student at the stand
 // is far worse than accepting an odd-looking prefix.
 const STUDENT_NUMBER_PATTERN = /^[A-Z]\d{8}$/;
-const MAX_SCORE = 100000;        // sanity ceiling; nobody is passing 100k pipes
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
 const MAX_QR_LENGTH = 512;   // generous for a LAN URL, bounded for safety
@@ -46,8 +55,23 @@ const MAX_QR_LENGTH = 512;   // generous for a LAN URL, bounded for safety
    Middleware
    --------------------------------------------------------------- */
 
-// Cap the body size — these payloads are tiny, so anything larger is junk.
-app.use(express.json({ limit: '4kb' }));
+/**
+ * In-memory fixed-window rate limit per client IP. Enough to stop a
+ * script hammering an endpoint; the counts reset every window.
+ */
+function rateLimit({ windowMs, max, message }) {
+  let hits = new Map();
+  setInterval(() => { hits = new Map(); }, windowMs).unref();
+
+  return (req, res, next) => {
+    const count = (hits.get(req.ip) || 0) + 1;
+    hits.set(req.ip, count);
+    if (count <= max) return next();
+
+    res.set('Retry-After', String(Math.ceil(windowMs / 1000)));
+    return res.status(429).json({ error: message });
+  };
+}
 
 /* ---------------------------------------------------------------
    Pages, with cache-busting
@@ -132,10 +156,11 @@ function normalizeName(value) {
 }
 
 /**
- * Validate the POST /api/score body.
+ * Validate the POST /api/score body: who played, and the run itself.
+ * The score is not in here — the server works it out from the flaps.
  * @returns {{ ok: true, value: object } | { ok: false, error: string }}
  */
-function validateScorePayload(body) {
+function validateRunPayload(body) {
   if (!body || typeof body !== 'object') {
     return { ok: false, error: 'Request body must be a JSON object.' };
   }
@@ -163,54 +188,99 @@ function validateScorePayload(body) {
     return { ok: false, error: `Name must be at most ${MAX_NAME_LENGTH} characters.` };
   }
 
-  // --- Score: required, non-negative integer ---
-  // Reject the type outright rather than coercing: "12abc" or true silently
-  // becoming a number would let junk into the leaderboard.
-  const { score } = body;
-
-  if (typeof score !== 'number' || !Number.isFinite(score)) {
-    return { ok: false, error: 'Score must be a number.' };
-  }
-  if (!Number.isInteger(score)) {
-    return { ok: false, error: 'Score must be a whole number.' };
-  }
-  if (score < 0) {
-    return { ok: false, error: 'Score must not be negative.' };
-  }
-  if (score > MAX_SCORE) {
-    return { ok: false, error: `Score must be at most ${MAX_SCORE}.` };
+  // --- The run: its ticket and its flaps ---
+  // Anything posting only a score is an old page or a script. Either way,
+  // there is nothing to replay.
+  if (typeof body.game_id !== 'string' || !body.game_id) {
+    return { ok: false, error: 'This page is out of date — refresh and play again.' };
   }
 
-  return { ok: true, value: { student_number: studentNumber, name, score } };
+  const flaps = decodeFlaps(body.flaps);
+  if (!flaps.ok) return flaps;
+
+  return {
+    ok: true,
+    value: {
+      student_number: studentNumber,
+      name,
+      game_id: body.game_id,
+      flapTicks: flaps.ticks,
+      flapDeltas: body.flaps,
+      // What the browser says it scored. Never recorded, only compared.
+      claimed: Number.isInteger(body.score) ? body.score : null
+    }
+  };
 }
 
 /* ---------------------------------------------------------------
    Routes
    --------------------------------------------------------------- */
 
+const tickets = createTicketStore();
+
+// A phone plays a run every few seconds at most, but a whole stand can
+// share one campus IP, so these are generous: they exist to stop floods.
+const ticketLimit = rateLimit({ windowMs: 60 * 1000, max: 300, message: 'Too many games — slow down.' });
+const scoreLimit = rateLimit({ windowMs: 60 * 1000, max: 300, message: 'Too many scores — slow down.' });
+
+/**
+ * POST /api/game
+ * A ticket for one run: { game_id, seed }. The seed decides every pipe.
+ */
+app.post('/api/game', ticketLimit, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  return res.status(201).json(tickets.issue());
+});
+
 /**
  * POST /api/score
- * Records a run. Creates the player if new; otherwise updates their best
- * score only when this run beat it. Always returns their current best.
+ * Records a run. The server replays the flaps from the ticket's seed and
+ * records the score it gets, never the one the browser claims. Creates the
+ * player if new; otherwise updates their best only when this run beat it.
  */
-app.post('/api/score', (req, res) => {
-  const validation = validateScorePayload(req.body);
+app.post('/api/score', scoreLimit, express.json({ limit: '128kb' }), (req, res) => {
+  const validation = validateRunPayload(req.body);
 
   if (!validation.ok) {
     return res.status(400).json({ error: validation.error });
   }
 
+  const run = validation.value;
+  const ticket = tickets.take(run.game_id);
+
+  if (!ticket) {
+    return res.status(409).json({ error: 'This run has expired or was already saved. Play again!' });
+  }
+
+  const verdict = verifyRun(ticket, run.flapTicks, tickets.now());
+
+  if (!verdict.ok) {
+    console.warn('[cheat?] rejected run for ' + run.student_number + ' from ' + req.ip + ': ' + verdict.error);
+    return res.status(422).json({ error: verdict.error });
+  }
+
+  if (run.claimed !== null && run.claimed !== verdict.score) {
+    // The replay is the truth; a different claim means an edited game.
+    console.warn('[cheat?] ' + run.student_number + ' claimed ' + run.claimed +
+      ', replay scored ' + verdict.score + ' — recorded ' + verdict.score);
+  }
+
   try {
-    const result = submitScore(validation.value);
+    const result = submitScore({
+      student_number: run.student_number,
+      name: run.name,
+      score: verdict.score,
+      replay: { seed: ticket.seed, ticks: verdict.ticks, flaps: run.flapDeltas.join(',') }
+    });
 
     // One line per game, so `docker compose logs -f` doubles as a live feed.
-    console.log('[game] ' + validation.value.name + ' scored ' + validation.value.score +
+    console.log('[game] ' + run.name + ' scored ' + verdict.score +
       (result.is_new_best ? ' (new best)' : ''));
 
     return res.status(result.is_new_player ? 201 : 200).json({
-      student_number: validation.value.student_number,
-      name: validation.value.name,
-      score: validation.value.score,
+      student_number: run.student_number,
+      name: run.name,
+      score: verdict.score,
       best_score: result.best_score,
       is_new_best: result.is_new_best
     });
@@ -338,12 +408,25 @@ function safeEqual(a, b) {
  * any username works. It travels with every request, which is why the
  * server should be on HTTPS (DEPLOYING.md step 6).
  */
+/* Wrong guesses per IP. Past the limit the IP is refused outright until
+   the window resets, so the password can't be brute-forced over HTTP. */
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_WRONG_PASSWORDS = 10;
+let wrongPasswords = new Map();
+setInterval(() => { wrongPasswords = new Map(); }, LOGIN_WINDOW_MS).unref();
+
 function requirePassword(req, res, next) {
   if (!ADMIN_PASSWORD) {
     return res.status(503).type('text/plain').send(
       'The dev page is switched off.\n\n' +
       'Set ADMIN_PASSWORD in docker-compose.yml, then run: docker compose up -d\n'
     );
+  }
+
+  if ((wrongPasswords.get(req.ip) || 0) >= MAX_WRONG_PASSWORDS) {
+    res.set('Retry-After', String(LOGIN_WINDOW_MS / 1000));
+    return res.status(429).type('text/plain')
+      .send('Too many wrong passwords. Try again in 15 minutes.' + '\n');
   }
 
   const [scheme, encoded] = (req.headers.authorization || '').split(' ');
@@ -353,6 +436,7 @@ function requirePassword(req, res, next) {
     const password = decoded.slice(decoded.indexOf(':') + 1);   // "username:password"
 
     if (safeEqual(password, ADMIN_PASSWORD)) return next();
+    wrongPasswords.set(req.ip, (wrongPasswords.get(req.ip) || 0) + 1);
     console.warn('[dev] wrong password from ' + req.ip);
   }
 
@@ -500,8 +584,14 @@ app.get('/dev/players.csv', (req, res) => {
    Start
    --------------------------------------------------------------- */
 
-app.listen(PORT, () => {
-  console.log(`CS++ Flappy running at http://localhost:${PORT}`);
-  console.log('Stand screen: /display   Dev page: /dev');
-  console.log(`Database: ${DB_PATH}`);
-});
+// Started directly (npm start), listen. Required by the tests, just
+// hand over the app so they can run it on a port of their own.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`CS++ Flappy running at http://localhost:${PORT}`);
+    console.log('Stand screen: /display   Dev page: /dev');
+    console.log(`Database: ${DB_PATH}`);
+  });
+}
+
+module.exports = app;

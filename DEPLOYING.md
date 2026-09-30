@@ -411,7 +411,15 @@ docker compose exec flappy npm run players
 
 # Export to CSV
 docker compose exec flappy npm run players -- --csv > players.csv
+
+# Re-check every score, and list best scores with no verified run behind
+# them (scores from before verification) — delete the fake ones on /dev
+docker compose exec flappy npm run verify
 ```
+
+Before picking winners, run `npm run verify` as above: every score saved by
+the current version replays from its recorded flaps, and anything it lists as
+unverified deserves a look.
 
 To copy the CSV to your own machine (run this on your laptop):
 

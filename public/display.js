@@ -238,11 +238,11 @@
       else if (index === 2) li.classList.add('top3');
 
       // Flash rows that are new or have improved since the last poll.
-      const before = previous.get(entry.student_number);
+      const before = previous.get(entry.name);
       if (before === undefined || before !== entry.best_score) {
         li.classList.add('changed');
       }
-      next.set(entry.student_number, entry.best_score);
+      next.set(entry.name, entry.best_score);
 
       const rank = document.createElement('span');
       rank.className = 'rank';

@@ -288,6 +288,23 @@ body {
   min-height: 0;
 }
 
+/* Free play: outlined, so Run stays the obvious choice */
+#register-form .btn.btn-ghost {
+  color: var(--text, #fff);
+  background: transparent;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .35);
+}
+
+#register-form .btn.btn-ghost:active { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .6); }
+
+/* Free play sits under Run as the quieter option */
+.free-play-note {
+  font-size: 11px;
+  opacity: .55;
+  line-height: 1.4;
+  text-align: center;
+}
+
 /* --- Score readout -------------------------------------------- */
 
 .score-label {

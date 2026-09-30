@@ -8,7 +8,9 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "backup": "node scripts/backup.js",
-    "players": "node scripts/players.js"
+    "players": "node scripts/players.js",
+    "test": "node --test test/*.test.js",
+    "verify": "node scripts/verify-runs.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

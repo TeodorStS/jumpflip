@@ -2,7 +2,12 @@
 
 Flappy Bird clone with a score leaderboard, built for CS++ Society at TU Dublin.
 Players register with their name and student number, play, and their best score
-goes on a shared leaderboard.
+goes on a shared leaderboard — or choose **Free play** to play without signing
+up, in which case nothing about the run leaves the browser.
+
+Scores can't be faked: the browser never sends a score, only what the player
+did, and the server replays it to work the score out itself. See
+[How scores are verified](#how-scores-are-verified).
 
 ## Running it
 
@@ -25,6 +30,53 @@ The dev page (`/dev`) stays switched off until `ADMIN_PASSWORD` is set:
 ADMIN_PASSWORD=pick-something npm start                 # macOS / Linux / Git Bash
 $env:ADMIN_PASSWORD="pick-something"; npm start         # Windows PowerShell
 ```
+
+Run the tests (Node's built-in runner, no extra dependencies):
+
+```bash
+npm test
+```
+
+## How scores are verified
+
+At the first event, the leaderboard filled up with impossible scores: the
+browser simply posted `{ "score": 99999 }` and the server believed it. Anyone
+with devtools or `curl` could do the same. Now the browser never reports a
+score at all.
+
+1. **The rules live in one file, shared by browser and server.**
+   `public/sim.js` holds the physics, pipes, scoring and collisions and draws
+   nothing. The browser plays with it; the server requires the same file.
+2. **The simulation is deterministic.** It advances in fixed ticks (120 a
+   second) rather than frame-sized steps, pipe gaps come from a hash of a seed
+   and the pipe's number rather than `Math.random`, and it uses only
+   arithmetic that every JavaScript engine computes bit-for-bit alike. The
+   same seed and the same flaps always give the same run — the tests check this
+   in Node, and Firefox and Node were checked to agree tick for tick.
+3. **The server picks the seed.** Before each run the browser asks
+   `POST /api/game` for a ticket (`game_id`, `seed`), so nobody can choose an
+   easy pipe layout. A ticket works for one submission only.
+4. **The browser sends what the player did.** After the run it posts the
+   ticket and the tick number of every flap. The server replays those from the
+   seed (`runs.js`) and records the score *it* gets. A different score in the
+   request is logged as tampering and ignored.
+5. **A run can't be faster than real time.** The browser can only run the game
+   slower than the clock, never faster. The server never simulates more ticks
+   than the time since the ticket was issued, so a bot that computes a perfect
+   run and posts it straight away is rejected.
+6. **Every stored run keeps its replay**, so `npm run verify` can re-check the
+   whole database later — and lists best scores from before verification
+   existed, for review on the dev page.
+
+Also: rate limits on starting runs and on submitting them, a lockout after 10
+wrong dev-page passwords, and the public leaderboard carries only names and
+scores — never student numbers.
+
+**What it can't stop:** a bot that plays *live*, in real time, watching the
+screen. That is real work per run rather than one `curl` command, and the dev
+page can delete anything that slips through. Stopping it fully would need
+server-side input timing analysis or human verification, which is out of
+proportion for a society game.
 
 ## Running it with Docker
 
@@ -72,8 +124,10 @@ event, not just from the laptop itself.
 ## Project layout
 
 ```
-server.js      Express app, API routes, input validation
+server.js      Express app, API routes, input validation, rate limits
+runs.js        Run tickets and replay verification (the anti-cheat)
 db.js          SQLite schema and queries
+test/          npm test: simulation, verification and API tests
 db/            Database file lives here (mountable as a volume)
 Dockerfile     Production container image
 docker-compose.yml  How to run it
@@ -85,13 +139,15 @@ deploy/
   README.md    Deployment guide
 scripts/
   players.js   Read-only CLI for inspecting the database
+  verify-runs.js  Replay every stored run; list unverified best scores
   backup.js    Safe database backup (WAL-aware)
   check-mascot.js  Validate the mascot sprite
   check-scroll.js  Verify background layers scroll smoothly
   check-obstacles.js  Verify obstacle detail does not flicker
 public/
   index.html   Start screen (society sign-up + registration), game-over panel
-  game.js      Game loop, rendering, API calls
+  sim.js       The game rules, shared with the server (deterministic)
+  game.js      Rendering, input, fixed-tick loop, API calls, free play
   style.css    Layout and overlay styling
   mascot.png   The CS++ mascot sprite
   display.html Stand display screen (QR codes + live leaderboard)
@@ -225,11 +281,23 @@ scores and turns its status dot red, rather than blanking.
 
 ## API
 
+### `POST /api/game`
+
+A ticket for one run: `{ "game_id": "…", "seed": 3141592653 }`. The seed
+decides every pipe. Tickets are single-use and expire after two hours.
+
 ### `POST /api/score`
 
 ```json
-{ "student_number": "12345678", "name": "Jane Doe", "score": 12 }
+{
+  "game_id": "…", "student_number": "C00035654", "name": "Jane Doe",
+  "flaps": [12, 41, 38, 45], "score": 12
+}
 ```
+
+`flaps` are the gaps, in ticks, between the player's flaps (the first is the
+tick of the first flap). The server replays them from the ticket's seed and
+records the score it gets; `score` is only compared, to log tampering.
 
 Creates the player if they're new. For an existing player the stored best score
 only moves when the new score beats it — otherwise the row is left alone. The
@@ -245,8 +313,10 @@ response always carries the player's current best:
 }
 ```
 
-Returns `201` for a newly created player, `200` otherwise, and `400` with an
-`error` message if validation fails.
+Returns `201` for a newly created player, `200` otherwise; `400` if validation
+fails, `409` for an unknown, used or expired ticket, `422` if the replay
+doesn't hold up (flaps after the crash, or a run longer than the time since the
+ticket was issued), and `429` when rate-limited.
 
 ### `GET /api/leaderboard?limit=10`
 
@@ -254,7 +324,7 @@ Top N players by best score, descending. `limit` defaults to 10 and is capped
 at 100; junk values fall back to the default.
 
 ```json
-[{ "name": "Jane Doe", "student_number": "12345678", "best_score": 12 }]
+[{ "name": "Jane Doe", "best_score": 12 }]
 ```
 
 ### `GET /api/stats`
@@ -392,9 +462,11 @@ worst per-frame deviation. Anything above zero means a visible jump.
 
 ## Tuning the game
 
-Physics and difficulty constants sit at the top of `public/game.js` —
-gravity, flap strength, pipe gap, pipe speed and spacing. Nothing
-gameplay-related is hardcoded further down the file.
+Physics and difficulty constants sit at the top of `public/sim.js` —
+gravity, flap strength, pipe gap, pipe speed and spacing. The server uses the
+same file, so a change there applies to verification automatically. Runs saved
+before a change will no longer replay to their scores, so `npm run verify`
+will flag them.
 
 ## Brand palette
 

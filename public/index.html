@@ -58,6 +58,11 @@
         <p id="register-error" class="form-error" role="alert" aria-live="polite"></p>
 
         <button type="submit" class="btn">Run</button>
+
+        <!-- Play without any details. Nothing is sent to the server, so a
+             free-play run never appears on the leaderboard. -->
+        <button id="free-play-btn" type="button" class="btn btn-ghost">Free play</button>
+        <p class="free-play-note">No sign-up &mdash; your score isn&rsquo;t saved</p>
       </form>
     </div>
 
@@ -93,6 +98,8 @@
     </div>
   </div>
 
+  <!-- The game rules, shared with the server, which replays every run -->
+  <script src="sim.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

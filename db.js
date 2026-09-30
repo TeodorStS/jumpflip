@@ -61,6 +61,16 @@ db.exec(`
   );
 `);
 
+/* Each run keeps the replay it was scored from: the seed its pipes came
+   from, how many ticks it lasted, and its flaps (comma-separated gaps
+   between flap ticks). scripts/verify-runs.js can replay every stored run
+   later and confirm the score. Added as columns so an existing database
+   upgrades itself; runs from before this are NULL. */
+const runColumns = db.prepare('PRAGMA table_info(runs)').all().map((c) => c.name);
+for (const [column, type] of [['seed', 'INTEGER'], ['ticks', 'INTEGER'], ['flaps', 'TEXT']]) {
+  if (!runColumns.includes(column)) db.exec(`ALTER TABLE runs ADD COLUMN ${column} ${type}`);
+}
+
 // Per-player history lookups, and time-ordered reporting.
 db.exec(`CREATE INDEX IF NOT EXISTS idx_runs_student ON runs (student_number);`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_runs_played_at ON runs (played_at);`);
@@ -98,14 +108,15 @@ const updateIfBetter = db.prepare(`
 `);
 
 const selectTop = db.prepare(`
-  SELECT name, student_number, best_score
+  SELECT name, best_score
     FROM players
    ORDER BY best_score DESC, updated_at ASC
    LIMIT ?
 `);
 
 const insertRun = db.prepare(`
-  INSERT INTO runs (student_number, score) VALUES (@student_number, @score)
+  INSERT INTO runs (student_number, score, seed, ticks, flaps)
+  VALUES (@student_number, @score, @seed, @ticks, @flaps)
 `);
 
 /* Event totals for the display page and the society report.
@@ -127,6 +138,7 @@ const selectStats = db.prepare(`
 
 /**
  * Record a score for a player, creating them if they're new.
+ * `replay` is the verified run it came from: { seed, ticks, flaps }.
  *
  * Insert-or-update-if-better, wrapped in a transaction so the whole
  * thing is atomic. Returns the player's best score after the
@@ -134,15 +146,22 @@ const selectStats = db.prepare(`
  *
  * @returns {{ best_score: number, is_new_best: boolean, is_new_player: boolean }}
  */
-const submitScore = db.transaction(({ student_number, name, score }) => {
+const submitScore = db.transaction(({ student_number, name, score, replay }) => {
   const existing = selectPlayer.get(student_number);
+  const run = {
+    student_number,
+    score,
+    seed: replay ? replay.seed : null,
+    ticks: replay ? replay.ticks : null,
+    flaps: replay ? replay.flaps : null
+  };
 
   if (!existing) {
     insertPlayer.run({ student_number, name, score });
     // Inside the same transaction: the player row and their first run either
     // both land or neither does. The insert must come first, since runs has
     // a foreign key pointing at players.
-    insertRun.run({ student_number, score });
+    insertRun.run(run);
     return { best_score: score, is_new_best: true, is_new_player: true };
   }
 
@@ -152,7 +171,7 @@ const submitScore = db.transaction(({ student_number, name, score }) => {
 
   // Every attempt is logged, including ones that did not beat the best —
   // that is the whole point of this table.
-  insertRun.run({ student_number, score });
+  insertRun.run(run);
 
   return {
     best_score: improved ? score : existing.best_score,
