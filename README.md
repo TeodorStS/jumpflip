@@ -2,8 +2,6 @@
 
 A Flappy Bird-style browser game made for the students of TU Dublin by the **CS++ Society**. Students played it at society events for a chance to win a reward, and signed up to the society along the way.
 
-![JumpFlip screenshot](docs/screenshot.png)
-
 ## Hosting
 
 JumpFlip was hosted on the CS++ Society's own server at TU Dublin, so students could open it straight from their phones on campus.
