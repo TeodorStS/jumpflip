@@ -60,7 +60,6 @@ npm start
 Open <http://localhost:3000>. Or with Docker:
 
 ```
-<<<<<<< HEAD
 
 The dev page (`/dev`) stays switched off until `ADMIN_PASSWORD` is set:
 
@@ -120,7 +119,6 @@ proportion for a society game.
 
 ```bash
 =======
->>>>>>> 5dd3545019d9718057330bf83c39bf4be576326c
 docker compose up -d --build
 ```
 
@@ -129,7 +127,6 @@ Optional environment variables: `PORT` (default `3000`), `DB_DIR` (where the dat
 ## Project layout
 
 ```
-<<<<<<< HEAD
 server.js      Express app, API routes, input validation, rate limits
 runs.js        Run tickets and replay verification (the anti-cheat)
 db.js          SQLite schema and queries
@@ -176,7 +173,6 @@ The app stores each player's name, student number and scores, used only for the 
 
 ## License
 
-<<<<<<< HEAD
 ## Database
 
 SQLite, at `db/flappy.sqlite`. Two tables:
