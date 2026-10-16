@@ -1,6 +1,5 @@
 # JumpFlip
 
-<<<<<<< HEAD
 Flappy Bird clone with a score leaderboard, built for CS++ Society at TU Dublin.
 Players register with their name and student number, play, and their best score
 goes on a shared leaderboard — or choose **Free play** to play without signing
